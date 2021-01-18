@@ -1,2 +1,3 @@
 # root_merkle_tree
-Generate root merkle tree in Python (port from Bitcoin implementation)
+- Blockchain prototype.
+- Generate root merkle tree in Python.
