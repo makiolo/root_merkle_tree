@@ -6,13 +6,13 @@ import itertools
 class Blockchain:
     def __init__(self, seed, bits):
         self.blocks = []
-        self.make_genesis(seed, bits=bits)
+        self.make_genesis(seed, bits)
 
     def __iter__(self):
         return iter(self.blocks)
 
     def make_genesis(self, seed, bits):
-        genesis = Block(self.hash(), '0', [], seed, bits=bits)
+        genesis = Block(self.hash(), '0', [], seed, bits)
         self.blocks.append(genesis)
 
     def last(self):
@@ -25,7 +25,7 @@ class Blockchain:
         return Blockchain.calculate_root_merkle_hash(hashes)
 
     def make_block(self, facts, bits):
-        return Block(self.hash(), self.last().hash(), facts, 0, bits=bits)
+        return Block(self.hash(), self.last().hash(), facts, 0, bits)
 
     def accept_block(self, block):
         self.blocks.append(block)
