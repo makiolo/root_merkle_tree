@@ -6,13 +6,13 @@ import itertools
 class Blockchain:
     def __init__(self, seed, bits):
         self.blocks = []
-        self.make_genesis(seed, bits)
+        self.make_genesis(seed, bits=bits)
 
     def __iter__(self):
         return iter(self.blocks)
 
     def make_genesis(self, seed, bits):
-        genesis = Block(self.hash(), '0', [], seed, bits)
+        genesis = Block(self.hash(), '0', [], seed, bits=bits)
         self.blocks.append(genesis)
 
     def last(self):
@@ -25,7 +25,7 @@ class Blockchain:
         return Blockchain.calculate_root_merkle_hash(hashes)
 
     def make_block(self, facts, bits):
-        return Block(self.hash(), self.last().hash(), facts, 0, bits)
+        return Block(self.hash(), self.last().hash(), facts, 0, bits=bits)
 
     def accept_block(self, block):
         self.blocks.append(block)
@@ -106,11 +106,11 @@ class Block:
 
 if __name__ == '__main__':
 
-    seed = 77127
-    difficulty = 4  # TODO: calculate automatically for let create blocks each 2 mins
+    seed = 661279
+    difficulty = 5  # TODO: calculate automatically for let create blocks each 2 mins
     blockchain = Blockchain(seed, difficulty)
     prev_block = blockchain.last()
-    # print(prev_block.pow(difficulty))
+    print(prev_block.pow(difficulty))
     assert(prev_block.pow(difficulty) == seed)
 
     for _ in range(20):
@@ -138,9 +138,9 @@ if __name__ == '__main__':
 
     Eventos que afectan a un minero:
 
-    - Estas en la blockchain equivocada. Actualiza a la blockchain honesta.
+    - Recibes una transacción nueva. La guardas en la mempool.
+    - Estas en la blockchain equivocada. Actualiza a la blockchain honesta. Liberas las transacciones minadas en la falsedad.
     - Otro minero ha encontrado el próximo bloque. Empieza el nuevo reto. Seleccionas de la mempool las que más fee dan.
     - Has minado un bloque. Añadelo a la blockchain, e informa via broadcast.
-    - Recibes una transacción nueva. La guardas en la mempool.
 
     '''
