@@ -1,3 +1,10 @@
+'''
+requirements:
+
+base58==1.0.0
+ecdsa==0.13
+
+'''
 import os
 import hashlib
 import binascii
