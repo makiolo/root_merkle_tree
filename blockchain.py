@@ -251,14 +251,14 @@ if __name__ == '__main__':
     assert(prev_block.pow(difficulty) == seed)
 
     bob = LocalWallet()
-    maria = LocalWallet()
-    antonio = LocalWallet()
+    maria = Wallet("1HzMPPEhDLojTBzH4r5NFWRteg4jqpxsLm")
+    antonio = Wallet("1p8pxYrueuPkSiWMV89LoEHwvS4kMcXyX")
 
     for _ in range(20):
 
         bus = BusBlock()
         bus.send(bob, maria, 5)
-        bus.send(maria, antonio, 3)
+        bus.send(bob, antonio, 3)
         bus.validate(blockchain)
 
         new_block = blockchain.make_block(bus.flush(bob), difficulty)
