@@ -1,6 +1,49 @@
+import os
 import hashlib
+import binascii
+import base58
+import ecdsa
 import time
 import itertools
+from collections import defaultdict
+
+
+def generate_private_key():
+    return binascii.hexlify(os.urandom(32)).decode('utf-8')
+
+
+def private_key_to_WIF(private_key):
+    var80 = "80" + str(private_key)
+    var = hashlib.sha256(binascii.unhexlify(hashlib.sha256(binascii.unhexlify(var80)).hexdigest())).hexdigest()
+    return str(base58.b58encode(binascii.unhexlify(str(var80) + str(var[0:8]))), 'utf-8')
+
+
+def private_key_to_public_key(private_key):
+    sign = ecdsa.SigningKey.from_string(binascii.unhexlify(private_key), curve = ecdsa.SECP256k1)
+    return '04' + binascii.hexlify(sign.verifying_key.to_string()).decode('utf-8')
+
+
+def public_key_to_address(public_key):
+    alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    count = 0; val = 0
+    var = hashlib.new('ripemd160')
+    var.update(hashlib.sha256(binascii.unhexlify(public_key.encode())).digest())
+    doublehash = hashlib.sha256(hashlib.sha256(binascii.unhexlify(('00' + var.hexdigest()).encode())).digest()).hexdigest()
+    address = '00' + var.hexdigest() + doublehash[0:8]
+    for char in address:
+        if (char != '0'):
+            break
+        count += 1
+    count = count // 2
+    n = int(address, 16)
+    output = []
+    while (n > 0):
+        n, remainder = divmod (n, 58)
+        output.append(alphabet[remainder])
+    while (val < count):
+        output.append(alphabet[0])
+        val += 1
+    return ''.join(output[::-1])
 
 
 class Blockchain:
@@ -104,19 +147,121 @@ class Block:
                 return nonce
 
 
+def sign_message(private_key, message):
+    sk = ecdsa.SigningKey.from_string(binascii.unhexlify(private_key), curve=ecdsa.SECP256k1)
+    vk = sk.get_verifying_key()
+    message = message.encode('utf-8')
+    sig = sk.sign(message)
+    sign = binascii.hexlify(sig)
+    result = vk.verify(binascii.unhexlify(sign), message)  # True
+    if result:
+        return sign.decode('utf-8')
+    else:
+        raise Exception('Error signing "{}".'.format(message))
+
+
+def verify_message(public_key, message, sign):
+    assert(public_key[:2] == '04')  # uncompressed public key
+    vk = ecdsa.VerifyingKey.from_string(binascii.unhexlify(public_key[2:]), curve=ecdsa.SECP256k1)
+    result = vk.verify(binascii.unhexlify(sign), message)
+    return result
+
+
+class Transaction:
+    def __init__(self, from_, to_, qty_):
+        self._from = from_
+        self._to = to_
+        self._qty = qty_
+
+    def __str__(self):
+        return '<data from="{}" to="{}" qty="{:.8f}" />'.format(self._from, self._to, self._qty)
+
+
+class Wallet:
+    def __init__(self, address):
+        self.address = address
+
+    def endpoint(self):
+        return self.address
+
+
+class BusBlock:
+    def __init__(self):
+        self.transactions = []
+
+    def send(self, from_wallet, to_wallet, qty_):
+        trans = str(Transaction(from_wallet.endpoint(), to_wallet.endpoint(), qty_))
+        self.transactions.append((trans, sign_message(from_wallet.private, trans), from_wallet.public))
+
+    def flush(self, from_wallet):
+        '''
+        Generate block data
+        '''
+        message = ''
+        for trans, sign, public in self.transactions:
+            message += '<transaction>\n'
+            message += '{}\n'.format(trans)
+            message += '<sign>{}</sign>\n'.format(sign)
+            message += '<public>{}</public>\n'.format(public)
+            message += '</transaction>\n'
+        message = message.encode('utf-8')
+        return '''<transactions>
+    <body>
+{}
+    </body>
+</transactions>
+        '''.format(message.decode('utf-8'))
+
+    def validate(self, blockchain):
+        '''
+        TODO
+        '''
+        # check balances positives (after apply transactions)
+        accounts = defaultdict(float)
+        for block in blockchain.blocks:
+            print('###############')
+            # UNSERIALIZE
+            # assert all balance >= 0
+            # check transaction is valid (using criptography)
+            print(block.transactions)
+            print('###############')
+
+
+class LocalWallet(Wallet):
+    def __init__(self):
+        self.private = generate_private_key()
+        self.public = private_key_to_public_key(self.private)
+        self.import_key = private_key_to_WIF(self.private)
+        super().__init__(public_key_to_address(self.public))
+
+    def sign(self, message):
+        return sign_message(self.private, message)
+
+    def verify(self, message, sign):
+        return verify_message(self.public, message, sign)
+
+
 if __name__ == '__main__':
 
-    seed = 661279
-    difficulty = 5  # TODO: calculate automatically for let create blocks each 2 mins
+    seed = 77127
+    difficulty = 4  # TODO: calculate automatically for let create blocks each 2 mins
     blockchain = Blockchain(seed, difficulty)
     prev_block = blockchain.last()
     print(prev_block.pow(difficulty))
     assert(prev_block.pow(difficulty) == seed)
 
+    bob = LocalWallet()
+    maria = LocalWallet()
+    antonio = LocalWallet()
+
     for _ in range(20):
-        # facts to register
-        facts = ['X-->Y 3', 'Y-->Z 4', 'Z-->R 6']
-        new_block = blockchain.make_block(facts, difficulty)
+
+        bus = BusBlock()
+        bus.send(bob, maria, 5)
+        bus.send(maria, antonio, 3)
+        bus.validate(blockchain)
+
+        new_block = blockchain.make_block(bus.flush(bob), difficulty)
         begin = time.time()
         # avoid DDoS and control blockchain growth
         nonce = new_block.pow(difficulty)
@@ -142,5 +287,4 @@ if __name__ == '__main__':
     - Estas en la blockchain equivocada. Actualiza a la blockchain honesta. Liberas las transacciones minadas en la falsedad.
     - Otro minero ha encontrado el próximo bloque. Empieza el nuevo reto. Seleccionas de la mempool las que más fee dan.
     - Has minado un bloque. Añadelo a la blockchain, e informa via broadcast.
-
     '''
