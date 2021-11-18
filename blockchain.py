@@ -368,18 +368,18 @@ if __name__ == '__main__':
     supply = 21000000
     capital = HashWallet( 'Supply total de la coin' )
     blockchain = Blockchain( capital, seed, difficulty, supply )
-    sathosi = HashWallet( 'Sathosi' )
+    satoshi = HashWallet( 'Satoshi' )
     hal_finney = HashWallet( 'Hal Finney' )
 
     bus = BusBlock()
-    bus.send( capital, sathosi, 10.0 )
-    bus.send( sathosi, hal_finney, 10.0 )
-    blockchain.append( bus, sathosi, fee=0.5 )
+    bus.send( capital, satoshi, 10.0 )
+    bus.send( satoshi, hal_finney, 10.0 )
+    blockchain.append( bus, satoshi, fee=0.5 )
     
     print(blockchain)
 
     print("capital balance: {}".format( capital.balance( blockchain ) ) )
-    print("Sathosi balance: {}".format( sathosi.balance( blockchain ) ) )
+    print("Satoshi balance: {}".format( satoshi.balance( blockchain ) ) )
     print("Hal Finney balance: {}".format( hal_finney.balance( blockchain ) ) )
 
     '''
