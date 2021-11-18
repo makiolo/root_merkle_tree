@@ -65,7 +65,7 @@ class Blockchain:
     def __str__(self):
         message = '<blockchain hash="{}">\n'.format(self.hash())
         for i, block in enumerate(blockchain):
-            message += '\t<block pos="{}" hash="{}" timestamp="{}">\n'.format(i, block.hash(), block.timestamp)
+            message += '\t<block order="{}" hash="{}" timestamp="{}">\n'.format(i, block.hash(), block.timestamp)
             message += str(block)
             message += '\t</block>\n'
         message += '</blockchain>'
@@ -75,17 +75,15 @@ class Blockchain:
         return iter(self.blocks)
 
     def make_genesis(self, seed, bits):
-
         genesis_bus = BusBlock()
         genesis = Block(self.hash(), seed, genesis_bus, 0, bits=bits)
         genesis.pow(bits)
         self.accept_block(genesis)
         
     def make_money(self, genesis_wallet, bits, supply):
-        genesis_bus = BusBlock()
-        null_wallet = NullWallet()
-        genesis_bus.send(null_wallet, genesis_wallet, supply)
-        block = self.make_block(genesis_bus, bits)
+        supply_bus = BusBlock()
+        supply_bus.send(self._null_wallet, genesis_wallet, supply)
+        block = self.make_block(supply_bus, bits)
         block.pow(bits)
         self.accept_block(block)
 
@@ -106,7 +104,7 @@ class Blockchain:
 
     def append (self, bus, driver):
         # TODO: how calculate salary
-        salary = 10
+        salary = 0.5
         if self.genesis_wallet.balance(self) >= salary:
             # pay commission
             bus.send(self.genesis_wallet, driver, salary)
@@ -199,7 +197,7 @@ class Block:
         message += '\t\t<target>{}</target>\n'.format(self.target)
         message += '\t\t<nonce>{}</nonce>\n'.format(self.nonce)
         if len(self.transactions) > 0:
-            message += '{}'.format(self.transactions)
+            message += str(self.transactions)
         return message
 
     def hash(self):
@@ -285,10 +283,10 @@ class BusBlock:
         transaction = Transaction(from_wallet.endpoint(), to_wallet.endpoint(), qty_)
         message = str(transaction)
         sign = sign_message(from_wallet.private, message)
-        transaction_wrap = TransactionWrap(transaction, sign, from_wallet.public)
         valid_sign = verify_message(from_wallet.public, message, sign)
         if not valid_sign:
             raise Exception('Error generating sign.')
+        transaction_wrap = TransactionWrap(transaction, sign, from_wallet.public)
         self.transactions.append(transaction_wrap)
 
     def __str__(self):
@@ -298,7 +296,7 @@ class BusBlock:
         if len(self.transactions) > 0:
             message = ''
             for i, transaction in enumerate(self.transactions):
-                message += '\t\t\t<transaction pos="{}">\n'.format(i)
+                message += '\t\t\t<transaction order="{}">\n'.format(i)
                 message += str(transaction)
                 message += '\t\t\t</transaction>\n'
             return '\t\t<transactions>\n{}\t\t</transactions>\n'.format(message)
@@ -376,8 +374,9 @@ if __name__ == '__main__':
     hal_finney = HashWallet( 'Hal Finney' )
 
     bus = BusBlock()
-    bus.send( sathosi, hal_finney, 0.0 )
-    blockchain.append( bus, sathosi )  # sathosi receive price for append
+    bus.send( capital, sathosi, 10.0 )
+    bus.send( sathosi, hal_finney, 10.0 )
+    blockchain.append( bus, sathosi )  # sathosi receive prize for append
     
     print(blockchain)
 
