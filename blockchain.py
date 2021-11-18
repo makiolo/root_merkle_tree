@@ -102,12 +102,10 @@ class Blockchain:
     def accept_block(self, block):
         self.blocks.append(block)
 
-    def append (self, bus, driver):
-        # TODO: how calculate salary
-        salary = 0.5
-        if self.genesis_wallet.balance(self) >= salary:
+    def append (self, bus, driver, fee=0.0):
+        if self.genesis_wallet.balance(self) >= fee:
             # pay commission
-            bus.send(self.genesis_wallet, driver, salary)
+            bus.send(self.genesis_wallet, driver, fee)
         new_block = self.make_block ( bus, self.bits )
         new_block.pow ( self.bits )
         self.accept_block ( new_block )
@@ -376,7 +374,7 @@ if __name__ == '__main__':
     bus = BusBlock()
     bus.send( capital, sathosi, 10.0 )
     bus.send( sathosi, hal_finney, 10.0 )
-    blockchain.append( bus, sathosi )  # sathosi receive prize for append
+    blockchain.append( bus, sathosi, fee=0.5 )
     
     print(blockchain)
 
