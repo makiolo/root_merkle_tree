@@ -54,13 +54,11 @@ def public_key_to_address(public_key):
 
 
 class Blockchain:
-    def __init__(self, genesis_wallet, seed, bits, supply):
-        self.genesis_wallet = genesis_wallet
+    def __init__(self, seed, bits):
         self.blocks = []
         self.bits = bits
-        self._null_wallet = NullWallet()
+        self._null_wallet = NullWallet('EUR')
         self.make_genesis(seed, bits)
-        self.make_money(genesis_wallet, bits, supply)
         
     def __str__(self):
         message = '<blockchain hash="{}">\n'.format(self.hash())
@@ -82,7 +80,7 @@ class Blockchain:
         
     def make_money(self, genesis_wallet, bits, supply):
         supply_bus = BusBlock()
-        supply_bus.send(self._null_wallet, genesis_wallet, supply)
+        supply_bus.send(self._null_wallet, genesis_wallet, supply, force=True)
         block = self.make_block(supply_bus, bits)
         block.pow(bits)
         self.accept_block(block)
@@ -102,10 +100,10 @@ class Blockchain:
     def accept_block(self, block):
         self.blocks.append(block)
 
-    def append (self, bus, driver, fee=0.0):
-        if self.genesis_wallet.balance(self) >= fee:
-            # pay commission
-            bus.send(self.genesis_wallet, driver, fee)
+    def append (self, bus, driver=None, fee=0.0):
+        # if self.genesis_wallet.balance(self) >= fee and fee > 0.0:
+        #     # pay commission
+        #     bus.send(self.genesis_wallet, driver, fee)
         new_block = self.make_block ( bus, self.bits )
         new_block.pow ( self.bits )
         self.accept_block ( new_block )
@@ -239,15 +237,21 @@ def verify_message(public_key, message, sign):
 
 
 class Transaction:
-    def __init__(self, from_, to_, qty_, *args, **kwargs):
+    def __init__(self, from_, to_, qty_, qtyQuote, **kwargs):
         self._from = from_
         self._to = to_
         self._qty = qty_
-        self._args = args
+        if qtyQuote is None:
+            self.qtyQuote = self._qty
+        else:
+            self.qtyQuote = qtyQuote
         self._kwargs = kwargs
 
     def __str__(self):
-        return '<data from="{}" to="{}" qty="{:.8f}" />'.format(self._from, self._to, self._qty)
+        extra = ''
+        for k, v in self._kwargs.items():
+            extra += '{}="{}" '.format(k, v)
+        return '<data from="{}" to="{}" qty="{:.8f}" {}/>'.format(self._from, self._to, self._qty, extra)
 
 
 class TransactionWrap:
@@ -277,8 +281,19 @@ class BusBlock:
     def __len__(self):
         return len(self.transactions)
 
-    def send(self, from_wallet, to_wallet, qty_):
-        transaction = Transaction(from_wallet.endpoint(), to_wallet.endpoint(), qty_)
+    def doble_send ( self, from_wallet, to_wallet, from_supply, to_supply, baseQty, quoteQty ):
+        self.send ( from_wallet, from_supply, baseQty )
+        self.send ( to_supply, to_wallet, quoteQty )
+
+    def send(self, from_wallet, to_wallet, qty_, qtyQuote=None, force=False):
+        if not force and from_wallet.unit != to_wallet.unit and qtyQuote is None:
+            raise Exception('Units are different: {} vs {}, use qtyQuote.'.format(from_wallet.unit, to_wallet.unit))
+        # if from_wallet.unit != to_wallet.unit:
+        #     if to_wallet.unit == 'EUR':
+        #         print('price {:.2f} {}/{}'.format(qtyQuote / qty_, from_wallet.unit, to_wallet.unit))
+        #     else:
+        #         print('price {:.2f} {}/{}'.format(qty_ / qtyQuote, to_wallet.unit, from_wallet.unit))
+        transaction = Transaction(from_wallet.endpoint(), to_wallet.endpoint(), qty_, qtyQuote)
         message = str(transaction)
         sign = sign_message(from_wallet.private, message)
         valid_sign = verify_message(from_wallet.public, message, sign)
@@ -303,14 +318,21 @@ class BusBlock:
 
 
 class PublicWallet:
-    def __init__(self, address):
+    def __init__(self, address, unit=None):
         self.address = address
+        if unit is None:
+            self.unit = 'EUR'
+        else:
+            self.unit = unit
 
     def endpoint(self):
         return self.address
 
-    def balance( self, blockchain ):
-        return self.balance_income(blockchain) - self.balance_expenses(blockchain)
+    def balance( self, blockchain, format=False ):
+        if format:
+            return '{} {}'.format(self.balance_income(blockchain) - self.balance_expenses(blockchain), self.unit)
+        else:
+            return self.balance_income(blockchain) - self.balance_expenses(blockchain)
 
     def balance_expenses( self, blockchain ):
         balan = 0.0
@@ -327,19 +349,19 @@ class PublicWallet:
             for transaction in block.transactions:
                 if transaction.data._to == self.address:
                     # deposit from other
-                    balan += transaction.data._qty
+                    balan += transaction.data.qtyQuote
         return balan
 
 
 class PrivateWallet( PublicWallet ):
-    def __init__(self, private_key=None):
+    def __init__(self, private_key=None, unit=None):
         if private_key is None:
             self.private = generate_private_key()
         else:
             self.private = binascii.hexlify(private_key.encode('utf-8')).decode('utf-8')
         self.public = private_key_to_public_key(self.private)
         self.import_key = private_key_to_WIF(self.private)
-        super().__init__(public_key_to_address(self.public))
+        super().__init__(public_key_to_address(self.public), unit=unit)
 
     def sign(self, message):
         return sign_message(self.private, message)
@@ -349,39 +371,75 @@ class PrivateWallet( PublicWallet ):
 
 
 class HashWallet(PrivateWallet):
-    def __init__(self, word):
-        super().__init__(hashlib.sha256(word.encode()).hexdigest()[:32])
+    def __init__(self, word, unit=None):
+        super().__init__(hashlib.sha256(word.encode()).hexdigest()[:32], unit=unit)
 
 
 class NullWallet( PublicWallet ):
-    def __init__(self):
+    def __init__(self, unit=None):
         self.private = binascii.hexlify(('0'*32).encode('utf-8')).decode('utf-8')
         self.public = private_key_to_public_key(self.private)
         self.import_key = private_key_to_WIF(self.private)
-        super().__init__(public_key_to_address(self.public))
+        super().__init__(public_key_to_address(self.public), unit=unit)
 
 
 if __name__ == '__main__':
 
     seed = 1234
     difficulty = 4
-    supply = 21000000
-    capital = HashWallet( 'Supply total de la coin' )
-    blockchain = Blockchain( capital, seed, difficulty, supply )
-    satoshi = HashWallet( 'Satoshi' )
-    hal_finney = HashWallet( 'Hal Finney' )
+    blockchain = Blockchain( seed, difficulty )
+
+    capital_eur = HashWallet( 'Central deposit EUROS', 'EUR' )
+    blockchain.make_money( capital_eur, difficulty, 21000000 )
+    
+    capital_vechain = HashWallet( 'Central deposit VECHAIN', 'VET' )
+    blockchain.make_money( capital_vechain, difficulty, 21000000)
+    
+    # Client wallets
+    vechain = HashWallet( 'Vechain', 'VET' )
+    ricardo = HashWallet( 'Ricardo', 'EUR' )
+
+    eur_before = capital_eur.balance( blockchain )
 
     bus = BusBlock()
-    bus.send( capital, satoshi, 10.0 )
-    bus.send( satoshi, hal_finney, 10.0 )
-    blockchain.append( bus, satoshi, fee=0.5 )
+    bus.send( capital_eur, ricardo, 85.0 )
+    # un deposito no cuenta como beneficio
+    eur_before -= 85.0
+    blockchain.append( bus )
     
-    print(blockchain)
+    # Ricardo compra 1478 VET a 35 EUR
+    bus = BusBlock()
+    bus.doble_send ( ricardo, vechain, capital_eur, capital_vechain, 35, 1478 )
+    blockchain.append( bus )
+    
+    bus = BusBlock()
+    bus.doble_send ( ricardo, vechain, capital_eur, capital_vechain, 50, 3000 )
+    blockchain.append( bus )
+    
+    # Ricardo vende 4000 VET a 120 EUR
+    bus = BusBlock()
+    bus.doble_send ( vechain, ricardo, capital_vechain, capital_eur, 4000, 120 )
+    blockchain.append( bus )
+    
+    bus = BusBlock()
+    bus.doble_send ( vechain, ricardo, capital_vechain, capital_eur, 478, 520 )
+    blockchain.append( bus )
 
-    print("capital balance: {}".format( capital.balance( blockchain ) ) )
-    print("Satoshi balance: {}".format( satoshi.balance( blockchain ) ) )
-    print("Hal Finney balance: {}".format( hal_finney.balance( blockchain ) ) )
-
+    bus = BusBlock()
+    bus.send( ricardo, capital_eur, 640.0 )
+    # un withdraw no cuenta como perdida
+    eur_before += 640.0
+    blockchain.append( bus )
+    
+    eur_after = capital_eur.balance( blockchain )
+    profit = eur_before - eur_after
+    print('Ingreso bruto: {} €'.format(profit))
+    
+    print("capital EUR balance: {}".format( capital_eur.balance( blockchain, True ) ) )
+    print("capital VET balance: {}".format( capital_vechain.balance( blockchain, True ) ) )
+    print("Ricardo balance: {}".format( ricardo.balance( blockchain, True ) ) )
+    print("Vechain balance: {}".format( vechain.balance( blockchain, True ) ) )
+    
     '''
     Notas random:
 
