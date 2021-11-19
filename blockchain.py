@@ -3,16 +3,117 @@ requirements:
 
 base58==1.0.0
 ecdsa==0.13
+mnemonic==0.20
+bip32utils
 
 '''
 import os
 import hashlib
 import binascii
+import traceback
+
 import base58
 import ecdsa
 import time
 import itertools
-from collections import defaultdict
+import pprint
+import binascii
+import mnemonic
+import bip32utils
+
+import sys
+import re
+from time import sleep
+
+try:  # if is python3
+    from urllib.request import urlopen
+except ImportError:  # if is python2
+    from urllib2 import urlopen
+
+
+def check_balance ( address ):
+    #Modify the value of the variable below to False if you do not want Bell Sound when the Software finds balance.
+    SONG_BELL = True
+
+    #Add time different of 0 if you need more security on the checks
+    WARN_WAIT_TIME = 0
+
+    blockchain_tags_json = [ 'total_received', 'final_balance', ]
+
+    SATOSHIS_PER_BTC = 1e+8
+
+    check_address = address
+
+    parse_address_structure = re.match ( r' *([a-zA-Z1-9]{1,34})', check_address )
+    if (parse_address_structure is not None):
+        check_address = parse_address_structure.group ( 1 )
+    else:
+        print ( "\nThis Bitcoin Address is invalid" + check_address )
+        exit ( 1 )
+
+    #Read info from Blockchain about the Address
+    reading_state = 1
+    while (reading_state):
+        try:
+            htmlfile = urlopen ( "https://blockchain.info/address/%s?format=json" % check_address, timeout = 10 )
+            htmltext = htmlfile.read ( ).decode ( 'utf-8' )
+            reading_state = 0
+        except:
+            print(traceback.format_exc())
+            reading_state += 1
+            print ( "Checking... " + str ( reading_state ) )
+            sleep (1)
+
+    print ( "\nBitcoin Address = " + check_address )
+
+    blockchain_info_array = [ ]
+    tag = ''
+    try:
+        for tag in blockchain_tags_json:
+            blockchain_info_array.append ( float ( re.search ( r'%s":(\d+),' % tag, htmltext ).group ( 1 ) ) )
+    except:
+        print ( "Error '%s'." % tag );
+        exit ( 1 )
+
+    for i, btc_tokens in enumerate ( blockchain_info_array ):
+
+        sys.stdout.write ( "%s \t= " % blockchain_tags_json [ i ] )
+        if btc_tokens > 0.0:
+            print ( "%.8f Bitcoin" % (btc_tokens / SATOSHIS_PER_BTC) )
+        else:
+            print ( "0 Bitcoin" )
+
+        if (SONG_BELL and blockchain_tags_json [ i ] == 'final_balance' and btc_tokens > 0.0):
+
+            #If you have a balance greater than 0 you will hear the bell
+            sys.stdout.write ( '\a\a\a' )
+            sys.stdout.flush ( )
+
+            return btc_tokens/SATOSHIS_PER_BTC
+
+
+def bip39(mnemonic_words):
+    # https://bitcoin.stackexchange.com/questions/76655/how-to-generate-public-and-private-key-pairs-from-the-12-seed-words-in-python
+    mobj = mnemonic.Mnemonic("english")
+    seed = mobj.to_seed(mnemonic_words)
+
+    bip32_root_key_obj = bip32utils.BIP32Key.fromEntropy(seed)
+    # fromEntropy
+    # fromExtendedKey
+    bip32_child_key_obj = bip32_root_key_obj.ChildKey(
+        44 + bip32utils.BIP32_HARDEN
+    ).ChildKey(
+        0 + bip32utils.BIP32_HARDEN
+    ).ChildKey(
+        0 + bip32utils.BIP32_HARDEN
+    ).ChildKey(0).ChildKey(0)
+
+    return {
+        'mnemonic_words': mnemonic_words,
+        'addr': bip32_child_key_obj.Address(),
+        'publickey': binascii.hexlify(bip32_child_key_obj.PublicKey()).decode(),
+        'privatekey': bip32_child_key_obj.WalletImportFormat(),
+    }
 
 
 def generate_private_key():
@@ -392,6 +493,11 @@ if __name__ == '__main__':
     capital_eur = HashWallet( 'Central deposit EUROS', 'EUR' )
     blockchain.make_money( capital_eur, difficulty, 21000000 )
     
+    print('address: {}'.format(capital_eur.address))
+    print('public: {}'.format(capital_eur.public))
+    print('private: {}'.format(capital_eur.private))
+    # print(check_balance(capital_eur.endpoint()))
+    
     capital_vechain = HashWallet( 'Central deposit VECHAIN', 'VET' )
     blockchain.make_money( capital_vechain, difficulty, 21000000)
     
@@ -439,6 +545,9 @@ if __name__ == '__main__':
     print("capital VET balance: {}".format( capital_vechain.balance( blockchain, True ) ) )
     print("Ricardo balance: {}".format( ricardo.balance( blockchain, True ) ) )
     print("Vechain balance: {}".format( vechain.balance( blockchain, True ) ) )
+
+    mnemonic_words = "aware report movie exile buyer drum poverty supreme gym oppose float elegant"
+    print ( bip39 ( mnemonic_words ) )
     
     '''
     Notas random:
