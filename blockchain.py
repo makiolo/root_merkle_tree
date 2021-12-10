@@ -5,8 +5,14 @@ base58==1.0.0
 ecdsa==0.13
 mnemonic==0.20
 bip32utils
+flask==2.0.2
+flask-crontab==0.1.2
+flask-marshmallow==0.14.0
+xmltodict==0.12.0
 
+https://flask-marshmallow.readthedocs.io/en/latest/
 '''
+import contextlib
 import os
 import hashlib
 import binascii
@@ -25,10 +31,14 @@ import sys
 import re
 from time import sleep
 
+import xmltodict
+
 try:  # if is python3
     from urllib.request import urlopen
 except ImportError:  # if is python2
     from urllib2 import urlopen
+
+from flask import Flask, jsonify
 
 
 def check_balance ( address ):
@@ -72,7 +82,7 @@ def check_balance ( address ):
         for tag in blockchain_tags_json:
             blockchain_info_array.append ( float ( re.search ( r'%s":(\d+),' % tag, htmltext ).group ( 1 ) ) )
     except:
-        print ( "Error '%s'." % tag );
+        print ( "Error '%s'." % tag )
         exit ( 1 )
 
     for i, btc_tokens in enumerate ( blockchain_info_array ):
@@ -155,11 +165,11 @@ def public_key_to_address(public_key):
 
 
 class Blockchain:
-    def __init__(self, seed, bits):
+    def __init__( self, seed, difficulty ):
         self.blocks = []
-        self.bits = bits
+        self.difficulty = difficulty
         self._null_wallet = NullWallet('EUR')
-        self.make_genesis(seed, bits)
+        self.make_genesis( seed, difficulty )
         
     def __str__(self):
         message = '<blockchain hash="{}">\n'.format(self.hash())
@@ -175,15 +185,15 @@ class Blockchain:
 
     def make_genesis(self, seed, bits):
         genesis_bus = BusBlock()
-        genesis = Block(self.hash(), seed, genesis_bus, 0, bits=bits)
-        genesis.pow(bits)
+        genesis = Block( self.hash(), seed, genesis_bus, 0, difficulty =bits )
+        genesis.pow()
         self.accept_block(genesis)
         
-    def make_money(self, genesis_wallet, bits, supply):
+    def make_money( self, wallet, difficulty, supply ):
         supply_bus = BusBlock()
-        supply_bus.send(self._null_wallet, genesis_wallet, supply, force=True)
-        block = self.make_block(supply_bus, bits)
-        block.pow(bits)
+        supply_bus.send( self._null_wallet, wallet, supply )
+        block = self.make_block( supply_bus )
+        block.pow()
         self.accept_block(block)
 
     def last(self):
@@ -195,18 +205,17 @@ class Blockchain:
             hashes.append(block.hash())
         return Blockchain.calculate_root_merkle_hash(hashes)
 
-    def make_block(self, busblock, bits):
-        return Block(self.hash(), self.last().hash(), busblock, 0, bits=bits)
+    def make_block( self, busblock ):
+        return Block( self.hash(), self.last().hash(), busblock, 0, difficulty=self.difficulty )
 
     def accept_block(self, block):
+        if not block.solved:
+            raise Exception('Block is not solved')
         self.blocks.append(block)
 
-    def append (self, bus, driver=None, fee=0.0):
-        # if self.genesis_wallet.balance(self) >= fee and fee > 0.0:
-        #     # pay commission
-        #     bus.send(self.genesis_wallet, driver, fee)
-        new_block = self.make_block ( bus, self.bits )
-        new_block.pow ( self.bits )
+    def append (self, bus):
+        new_block = self.make_block ( bus )
+        new_block.pow ( )
         self.accept_block ( new_block )
         if self.valid():
             return new_block
@@ -232,13 +241,7 @@ class Blockchain:
             return '{:064d}'.format(0)
 
     def valid(self):
-        '''
-        check order and integrity
-
-        :return:
-        '''
-
-        # check positive balances
+        # check positive balances and blockchain integrity
         publics = []
         for block in self.blocks:
             for transaction in block.transactions:
@@ -277,14 +280,16 @@ class Blockchain:
 
 
 class Block:
-    def __init__(self, merkle_root, prev_hash, transactions, nonce, bits):
+    def __init__( self, merkle_root, prev_hash, transactions, nonce, difficulty ):
         self.version = 0x02000000
         self.prev_hash = prev_hash
         self.merkle_root = merkle_root
-        self.target = "0" * bits
+        self.difficulty = difficulty
+        self.target = "0" * difficulty
         self.nonce = nonce
         self.timestamp = time.time()
         self.transactions = transactions
+        self.solved = False
 
     def __str__(self):
         message = ''
@@ -305,7 +310,7 @@ class Block:
         guess_hash = self.hash()
         return guess_hash[:bits] == self.target
 
-    def pow(self, bits):
+    def pow(self):
         '''
         calculate nonce
 
@@ -313,46 +318,22 @@ class Block:
         :return:
         '''
         for nonce in itertools.count():  # inifinite generator by brute force
-            if self.check_nonce(nonce, bits):
+            if self.check_nonce(nonce, self.difficulty):
+                self.solved = True
                 return nonce
 
 
-def sign_message(private_key, message):
-    sk = ecdsa.SigningKey.from_string(binascii.unhexlify(private_key), curve=ecdsa.SECP256k1)
-    vk = sk.get_verifying_key()
-    message = message.encode('utf-8')
-    sig = sk.sign(message)
-    sign = binascii.hexlify(sig)
-    result = vk.verify(binascii.unhexlify(sign), message)  # True
-    if result:
-        return sign.decode('utf-8')
-    else:
-        raise Exception('Error signing "{}".'.format(message))
-
-
-def verify_message(public_key, message, sign):
-    assert(public_key[:2] == '04')  # uncompressed public key
-    vk = ecdsa.VerifyingKey.from_string(binascii.unhexlify(public_key[2:]), curve=ecdsa.SECP256k1)
-    result = vk.verify(binascii.unhexlify(sign.encode('utf-8')), message.encode('utf-8'))
-    return result
-
-
 class Transaction:
-    def __init__(self, from_, to_, qty_, qtyQuote, **kwargs):
+    def __init__(self, from_, to_, qty_):
         self._from = from_
         self._to = to_
         self._qty = qty_
-        if qtyQuote is None:
-            self.qtyQuote = self._qty
-        else:
-            self.qtyQuote = qtyQuote
-        self._kwargs = kwargs
 
     def __str__(self):
-        extra = ''
-        for k, v in self._kwargs.items():
-            extra += '{}="{}" '.format(k, v)
-        return '<data from="{}" to="{}" qty="{:.8f}" {}/>'.format(self._from, self._to, self._qty, extra)
+        return '<data from="{}" to="{}" qty="{:.8f}" />'.format(self._from, self._to, self._qty)
+
+    def hash(self):
+        return hashlib.sha256(self.__str__().encode()).hexdigest()
 
 
 class TransactionWrap:
@@ -364,7 +345,7 @@ class TransactionWrap:
     def __str__(self):
         message = ''
         # mensaje
-        message += '\t\t\t\t{}\n'.format( self.data )
+        message += '\t\t\t\t{}\n'.format(self.data)
         # firma
         message += '\t\t\t\t<sign>{}</sign>\n'.format(self.sign)
         # remitente
@@ -382,22 +363,30 @@ class BusBlock:
     def __len__(self):
         return len(self.transactions)
 
+    def sign_message(self, private_key, message):
+        sk = ecdsa.SigningKey.from_string(binascii.unhexlify(private_key), curve=ecdsa.SECP256k1)
+        message = message.encode('utf-8')
+        sig = sk.sign(message)
+        sign = binascii.hexlify(sig)
+        return sign.decode('utf-8')
+
+
+    def verify_message(self, public_key, message, sign):
+        assert(public_key[:2] == '04')  # uncompressed public key
+        vk = ecdsa.VerifyingKey.from_string(binascii.unhexlify(public_key[2:]), curve=ecdsa.SECP256k1)
+        result = vk.verify(binascii.unhexlify(sign.encode('utf-8')), message.encode('utf-8'))
+        return result
+
+
     def doble_send ( self, from_wallet, to_wallet, from_supply, to_supply, baseQty, quoteQty ):
         self.send ( from_wallet, from_supply, baseQty )
         self.send ( to_supply, to_wallet, quoteQty )
 
-    def send(self, from_wallet, to_wallet, qty_, qtyQuote=None, force=False):
-        if not force and from_wallet.unit != to_wallet.unit and qtyQuote is None:
-            raise Exception('Units are different: {} vs {}, use qtyQuote.'.format(from_wallet.unit, to_wallet.unit))
-        # if from_wallet.unit != to_wallet.unit:
-        #     if to_wallet.unit == 'EUR':
-        #         print('price {:.2f} {}/{}'.format(qtyQuote / qty_, from_wallet.unit, to_wallet.unit))
-        #     else:
-        #         print('price {:.2f} {}/{}'.format(qty_ / qtyQuote, to_wallet.unit, from_wallet.unit))
-        transaction = Transaction(from_wallet.endpoint(), to_wallet.endpoint(), qty_, qtyQuote)
+    def send(self, from_wallet, to_wallet, qty_):
+        transaction = Transaction(from_wallet.endpoint(), to_wallet.endpoint(), qty_)
         message = str(transaction)
-        sign = sign_message(from_wallet.private, message)
-        valid_sign = verify_message(from_wallet.public, message, sign)
+        sign = self.sign_message(from_wallet.private, message)
+        valid_sign = self.verify_message(from_wallet.public, message, sign)
         if not valid_sign:
             raise Exception('Error generating sign.')
         transaction_wrap = TransactionWrap(transaction, sign, from_wallet.public)
@@ -410,7 +399,7 @@ class BusBlock:
         if len(self.transactions) > 0:
             message = ''
             for i, transaction in enumerate(self.transactions):
-                message += '\t\t\t<transaction order="{}">\n'.format(i)
+                message += '\t\t\t<transaction order="{}" hash="{}">\n'.format(i, transaction.data.hash())
                 message += str(transaction)
                 message += '\t\t\t</transaction>\n'
             return '\t\t<transactions>\n{}\t\t</transactions>\n'.format(message)
@@ -450,8 +439,25 @@ class PublicWallet:
             for transaction in block.transactions:
                 if transaction.data._to == self.address:
                     # deposit from other
-                    balan += transaction.data.qtyQuote
+                    balan += transaction.data._qty
         return balan
+
+    def begin_net_income(self, blockchain):
+        self.deposits = 0
+        self.withdraws = 0
+        self.eur_before = self.balance( blockchain )
+
+    def end_net_income(self, blockchain):
+        eur_after = self.balance( blockchain )
+        profit = self.eur_before + self.withdraws - self.deposits - eur_after
+        return profit
+    
+    def withdraw( self, qty ):
+        self.withdraws += qty
+
+    def deposit( self, qty ):
+        self.deposits += qty
+        
 
 
 class PrivateWallet( PublicWallet ):
@@ -463,12 +469,6 @@ class PrivateWallet( PublicWallet ):
         self.public = private_key_to_public_key(self.private)
         self.import_key = private_key_to_WIF(self.private)
         super().__init__(public_key_to_address(self.public), unit=unit)
-
-    def sign(self, message):
-        return sign_message(self.private, message)
-
-    def verify(self, message, sign):
-        return verify_message(self.public, message, sign)
 
 
 class HashWallet(PrivateWallet):
@@ -484,79 +484,108 @@ class NullWallet( PublicWallet ):
         super().__init__(public_key_to_address(self.public), unit=unit)
 
 
-if __name__ == '__main__':
 
-    seed = 1234
-    difficulty = 4
-    blockchain = Blockchain( seed, difficulty )
+seed = 1234
+difficulty = 4
+blockchain = Blockchain( seed, difficulty )
 
-    capital_eur = HashWallet( 'Central deposit EUROS', 'EUR' )
-    blockchain.make_money( capital_eur, difficulty, 21000000 )
-    
-    print('address: {}'.format(capital_eur.address))
-    print('public: {}'.format(capital_eur.public))
-    print('private: {}'.format(capital_eur.private))
-    # print(check_balance(capital_eur.endpoint()))
-    
-    capital_vechain = HashWallet( 'Central deposit VECHAIN', 'VET' )
-    blockchain.make_money( capital_vechain, difficulty, 21000000)
-    
-    # Client wallets
-    vechain = HashWallet( 'Vechain', 'VET' )
-    ricardo = HashWallet( 'Ricardo', 'EUR' )
+capital_eur = HashWallet( 'Central deposit EUROS', 'EUR' )
+blockchain.make_money( capital_eur, difficulty, 21000000 )
 
-    eur_before = capital_eur.balance( blockchain )
+print('address: {}'.format(capital_eur.address))
+print('public: {}'.format(capital_eur.public))
+print('private: {}'.format(capital_eur.private))
+# print(check_balance(capital_eur.endpoint()))
 
-    bus = BusBlock()
-    bus.send( capital_eur, ricardo, 85.0 )
-    # un deposito no cuenta como beneficio
-    eur_before -= 85.0
-    blockchain.append( bus )
-    
-    # Ricardo compra 1478 VET a 35 EUR
-    bus = BusBlock()
-    bus.doble_send ( ricardo, vechain, capital_eur, capital_vechain, 35, 1478 )
-    blockchain.append( bus )
-    
-    bus = BusBlock()
-    bus.doble_send ( ricardo, vechain, capital_eur, capital_vechain, 50, 3000 )
-    blockchain.append( bus )
-    
-    # Ricardo vende 4000 VET a 120 EUR
-    bus = BusBlock()
-    bus.doble_send ( vechain, ricardo, capital_vechain, capital_eur, 4000, 120 )
-    blockchain.append( bus )
-    
-    bus = BusBlock()
-    bus.doble_send ( vechain, ricardo, capital_vechain, capital_eur, 478, 520 )
-    blockchain.append( bus )
+capital_vechain = HashWallet( 'Central deposit VECHAIN', 'VET' )
+blockchain.make_money( capital_vechain, difficulty, 21000000)
 
-    bus = BusBlock()
-    bus.send( ricardo, capital_eur, 640.0 )
-    # un withdraw no cuenta como perdida
-    eur_before += 640.0
-    blockchain.append( bus )
-    
-    eur_after = capital_eur.balance( blockchain )
-    profit = eur_before - eur_after
-    print('Ingreso bruto: {} €'.format(profit))
-    
-    print("capital EUR balance: {}".format( capital_eur.balance( blockchain, True ) ) )
-    print("capital VET balance: {}".format( capital_vechain.balance( blockchain, True ) ) )
-    print("Ricardo balance: {}".format( ricardo.balance( blockchain, True ) ) )
-    print("Vechain balance: {}".format( vechain.balance( blockchain, True ) ) )
+# Client wallets
+vechain = HashWallet( 'Vechain', 'VET' )
+ricardo = HashWallet( 'Ricardo', 'EUR' )
 
-    mnemonic_words = "aware report movie exile buyer drum poverty supreme gym oppose float elegant"
-    print ( bip39 ( mnemonic_words ) )
-    
-    '''
-    Notas random:
+eur_account = capital_eur.begin_net_income(blockchain)
 
-    Eventos que afectan a un minero:
+bus = BusBlock()
+bus.send( capital_eur, ricardo, 85.0 )
+capital_eur.deposit( 85.0 )
+blockchain.append( bus )
 
-    - Recibes una transacción nueva. La guardas en la mempool.
-    - Estas en la blockchain equivocada. Actualiza a la blockchain honesta. Liberas las transacciones minadas en la falsedad.
-    - Otro minero ha encontrado el próximo bloque. Empieza el nuevo reto. Seleccionas de la mempool las que más fee dan.
-    - Has minado un bloque. Añadelo a la blockchain, e informa via broadcast.
-    '''
-    
+# Ricardo compra 1478 VET a 35 EUR
+bus = BusBlock()
+bus.doble_send ( ricardo, vechain, capital_eur, capital_vechain, 35, 1478 )
+blockchain.append( bus )
+
+bus = BusBlock()
+bus.doble_send ( ricardo, vechain, capital_eur, capital_vechain, 50, 3000 )
+blockchain.append( bus )
+
+# Ricardo vende 4000 VET a 120 EUR
+bus = BusBlock()
+bus.doble_send ( vechain, ricardo, capital_vechain, capital_eur, 4000, 120 )
+blockchain.append( bus )
+
+bus = BusBlock()
+bus.doble_send ( vechain, ricardo, capital_vechain, capital_eur, 478, 520 )
+blockchain.append( bus )
+
+bus = BusBlock()
+bus.send( ricardo, capital_eur, 640.0 )
+capital_eur.withdraw( 640.0 )
+blockchain.append( bus )
+
+profit = capital_eur.end_net_income(blockchain)
+print("profit: {}".format(profit))
+
+print("capital EUR balance: {}".format( capital_eur.balance( blockchain, True ) ) )
+print("capital VET balance: {}".format( capital_vechain.balance( blockchain, True ) ) )
+print("Ricardo balance: {}".format( ricardo.balance( blockchain, True ) ) )
+print("Vechain balance: {}".format( vechain.balance( blockchain, True ) ) )
+
+# mnemonic_words = "aware report movie exile buyer drum poverty supreme gym oppose float elegant"
+# print ( bip39 ( mnemonic_words ) )
+'''
+Notas random:
+
+Eventos que afectan a un minero:
+
+'''
+
+
+app = Flask(__name__)
+
+
+@app.route("/", methods=['GET'])
+def get_blockchain():
+    return jsonify(xmltodict.parse(str(blockchain)))
+
+
+def on_event_transaction():
+    # - Recibes una transacción nueva. La guardas en la mempool.
+    pass
+
+
+def check_blockchain():
+    # - Si Estas en la blockchain equivocada. Actualiza a la blockchain honesta. Liberas las transacciones minadas en la falsedad.
+    pass
+
+
+def on_event_block_mined():
+    pass
+    # - Otro minero ha encontrado el próximo bloque. Empieza el nuevo reto. Seleccionas de la mempool las que más fee dan.
+
+
+def mined_block():
+    # - Has minado un bloque. Añadelo a la blockchain, e informa via broadcast.
+    pass
+
+
+# Eventos periodicos
+# cada minuto buscar peers vecinos
+
+
+# Desplegar una red p2p
+# https://pypi.org/project/pyp2p/
+
+
+app.run('127.0.0.1', 5000)
