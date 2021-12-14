@@ -14,6 +14,7 @@ https://flask-marshmallow.readthedocs.io/en/latest/
 '''
 import contextlib
 import os
+import math
 import hashlib
 import binascii
 import traceback
@@ -27,6 +28,7 @@ import pprint
 import binascii
 import mnemonic
 import bip32utils
+import pandas as pd
 
 import sys
 import re
@@ -173,6 +175,8 @@ class Blockchain:
         self.withdraws = defaultdict(float)
         self.qty_before = defaultdict( float )
         self._null_wallet = NullWallet()
+        self.foundation_wallets = {}
+        self.client_wallets = {}
         self.make_genesis( seed, difficulty )
         
     def __str__(self):
@@ -199,6 +203,20 @@ class Blockchain:
         block = self.make_block( supply_bus )
         block.pow()
         self.accept_block(block)
+
+    def build_foundation_wallet(self, hash_wallet, unit, supply):
+        key = hash_wallet
+        if key not in self.foundation_wallets:
+            wallet = blockchain.make_foundation_wallet(hash_wallet, unit, supply)
+            self.foundation_wallets[key] = wallet
+        return self.foundation_wallets[key]
+
+    def build_client_wallet(self, hash_wallet, unit):
+        key = hash_wallet
+        if key not in self.client_wallets:
+            wallet = blockchain.make_client_wallet(hash_wallet, unit)
+            self.client_wallets[key] = wallet
+        return self.client_wallets[key]
 
     def last(self):
         return self.blocks[-1]
@@ -240,8 +258,8 @@ class Blockchain:
     def exchange ( self, from_wallet, from_supply, baseQty, baseUnit, to_supply, to_wallet, quoteQty, quoteUnit ):
         bus = BusBlock()
         bus.doble_send (
-                from_wallet, from_supply, baseQty,
-                baseUnit, to_supply, to_wallet, quoteQty, quoteUnit)
+                from_wallet, from_supply, baseQty, baseUnit, 
+                to_supply, to_wallet, quoteQty, quoteUnit)
         self.append( bus )
 
     @staticmethod
@@ -268,12 +286,12 @@ class Blockchain:
             for transaction in block.transactions:
                 # la null wallet no puede recibir dinero de nadie
                 if transaction.data._to == self._null_wallet.address:
-                    return False
+                    raise Exception("NullWallet can't receive transactions.")
                 
                 # una wallet de tipo foundation, solo recibe de la null wallet
-                if transaction.data._to.endswith('FOUNDATION'):
-                    if transaction.data._from != self._null_wallet.address:
-                        return False
+                # if transaction.data._to.endswith('FOUNDATION'):
+                #     if transaction.data._from != self._null_wallet.address:
+                #         raise Exception("Foundation wallet only receive from NullWallet")
                 
                 # cada wallet foundation es única por nombre
                 # la transferencia desde la null wallet a dicho simbolo de foundation debe ser
@@ -285,15 +303,13 @@ class Blockchain:
                     publics.append( (transaction.data._to, transaction.data._unit) )
                 
         # skip null address
-        for public_address, unit in publics:
-            if public_address == self._null_wallet.address:
-                # no check null wallet balance
-                continue
-            wallet = PublicWallet( public_address )
-            balan = wallet.balance(self, unit)
-            if balan < 0.0:
-                # Invalid wallet
-                return False
+        # for public_address, unit in publics:
+        #     if public_address == self._null_wallet.address:
+        #         continue
+        #     wallet = PublicWallet( public_address )
+        #     balan = wallet.balance(self, unit)
+        #     if balan < 0.0:
+        #         raise Exception('Wallet {} with invalid balance {}.'.format(public_address, balan))
         
         # check integrity
         # TODO: check difficulty expected
@@ -377,6 +393,22 @@ class Block:
                 return nonce
 
 
+class TxFrom:
+    def __init__(self, wallet, qty, unit, native_qty, native_unit):
+        self.wallet = wallet
+        self.qty = qty
+        self.unit = unit
+        self.native_qty = native_qty
+        self.native_unit = native_unit
+
+
+class TxTo:
+    def __init__(self, wallet, qty, unit):
+        self.wallet = wallet
+        self.qty = qty
+        self.unit = unit
+
+
 class Transaction:
     def __init__(self, from_, to_, qty_, unit_):
         self._from = from_
@@ -438,6 +470,11 @@ class BusBlock:
         self.send ( to_supply, to_wallet, quoteQty, quoteUnit )
 
     def send(self, from_wallet, to_wallet, qty_, unit_):
+        # buscar en todas las transacciones de "from_wallet"
+        # elegir por FIFO, las primeras no gastadas (UTXO)
+        # nos recorremos un arbol en profundidad
+        # los nodos hoja son los UTXOS (dinero no gastado)
+        
         transaction = Transaction(from_wallet.endpoint(), to_wallet.endpoint(), qty_, unit_)
         message = str(transaction)
         sign = self.sign_message(from_wallet.private, message)
@@ -527,57 +564,114 @@ class FoundationWallet( PrivateWallet ):
         super().__init__('{}-FOUNDATION'.format(unit), hashlib.sha256(name.encode()).hexdigest()[:32])
 
 
+dataset_csv = r"C:\Users\x335336\OneDrive - Santander Office 365\Documents\crypto_transactions_record_20211213_195307.csv"
+print(dataset_csv)
+df = pd.read_csv(dataset_csv)
+
 seed = 1234
-difficulty = 4
+difficulty = 1
 blockchain = Blockchain( seed, difficulty )
 
-# crear distintas criptomonedas dentro de la red
-capital_eur = blockchain.make_foundation_wallet('Central deposit EUROS', 'EUR', 21000000)
-capital_vechain = blockchain.make_foundation_wallet('Central deposit VECHAIN', 'VET', 21000000)
-test_nft = blockchain.make_foundation_wallet('Central deposit NFT', 'NFT-1234', 1)
+'''
+'Timestamp (UTC)', 
+'Transaction Description', 
+'Currency', 
+'Amount',
+'To Currency', 
+'To Amount', 
+'Native Currency', 
+'Native Amount',
+'Native Amount (in USD)', 
+'Transaction Kind'
+'''
+currencies = []
+for index, row in df.iterrows():
+    currency = row[ 'Currency' ]
+    amount = row[ 'Amount' ]
+    from_currency = row[ 'Native Currency' ]
+    from_amount = row[ 'Native Amount' ]
+    to_currency = row['To Currency']
+    to_amount = row['To Amount']
+    if currency not in currencies:
+        if isinstance(currency, str) or not math.isnan(currency):
+            currencies.append(currency)
+    if to_currency not in currencies:
+        if isinstance(currency, str) or not math.isnan(to_currency):
+            currencies.append(to_currency)
 
-# crear wallets
-person = blockchain.make_client_wallet( 'Personal Ricardo', 'EUR' )
-vechain = blockchain.make_client_wallet( 'Personal Vechain', 'VET' )
-person2 = blockchain.make_client_wallet( 'Personal Ricardo 2', 'EUR' )
-vechain2 = blockchain.make_client_wallet( 'Personal Vechain 2', 'VET' )
+    # print(row['Transaction Kind'] + ' --')
+    # print(row)
 
-# reparto inicial (utilizando el dinero de la fundación)
-blockchain.transfer( capital_eur, person, 35.0, 'EUR' )
-blockchain.transfer( capital_eur, person2, 5.0, 'EUR' )
-blockchain.transfer( capital_vechain, vechain, 0.0, 'VET' )
-blockchain.transfer( capital_vechain, vechain2, 1478.0, 'VET' )
+    '''
+    card_top_up
+    dynamic_coin_swap_bonus_exchange_deposit
+    lockup_lock
+    dynamic_coin_swap_credited
+    dynamic_coin_swap_debited
+    '''
+    if(row['Transaction Kind'] == 'crypto_withdrawal') or (row['Transaction Kind'] == 'crypto_wallet_swap_debited') or (row['Transaction Kind'] == 'card_top_up'):
 
-# send unique nft
-assert(person.balance(blockchain, 'NFT-1234') == 0.0)
-blockchain.transfer( test_nft, person, 1, 'NFT-1234')
-assert(person.balance(blockchain, 'NFT-1234') == 1.0)
+        from_foundation_wallet = blockchain.build_foundation_wallet('Central deposit {}'.format(currency), currency, 21000000)
+        from_personal_wallet = blockchain.build_client_wallet( 'Personal {}'.format(currency), currency )
+        blockchain.transfer(from_personal_wallet, from_foundation_wallet, -amount, currency)
+        
+    elif(row['Transaction Kind'] == 'crypto_deposit') or (row['Transaction Kind'] == 'crypto_wallet_swap_credited'):
 
-# compra VET/EUR
-blockchain.exchange ( 
-        person, person2, 35, 'EUR',
-        vechain2, vechain, 1478, 'VET')
+        from_foundation_wallet = blockchain.build_foundation_wallet('Central deposit {}'.format(currency), currency, 21000000)
+        from_personal_wallet = blockchain.build_client_wallet( 'Personal {}'.format(currency), currency )
+        blockchain.transfer(from_foundation_wallet, from_personal_wallet, amount, currency)
 
-# venta VET/EUR (beneficio 5 euros)
-blockchain.exchange (
-        person2, person, 40, 'EUR',
-        vechain, vechain2, 1478, 'VET')
+    elif(row['Transaction Kind'] == 'dynamic_coin_swap_debited') or (row['Transaction Kind'] == 'dynamic_coin_swap_credited') or (row['Transaction Kind'] == 'dynamic_coin_swap_bonus_exchange_deposit') or (row['Transaction Kind'] == 'lockup_lock'):
+        pass
+        
+    elif (row['Transaction Kind'] == 'crypto_exchange') or (row['Transaction Kind'] == 'crypto_viban_exchange'):
 
-# transferencia (no cuenta en el calculo del profit)
-blockchain.transfer( person, person2, 33.0, 'EUR' )
+        from_foundation_wallet = blockchain.build_foundation_wallet('Central deposit {}'.format(currency), currency, 200000000)
+        from_personal_wallet = blockchain.build_client_wallet( 'Personal {}'.format(currency), currency )
 
-# deberia dar +5 y -5 respectivamente
-profit = blockchain.get_profit( person, 'EUR' )
-profit2 = blockchain.get_profit( person2, 'EUR' )
+        to_foundation_wallet = blockchain.build_foundation_wallet('Central deposit {}'.format(to_currency), to_currency, 200000000)
+        to_personal_wallet = blockchain.build_client_wallet( 'Personal {}'.format(to_currency), to_currency )
 
-print("profit: {}".format(profit))
-print("profit2: {}".format(profit2))
+        blockchain.exchange (
+                from_personal_wallet, from_foundation_wallet, -amount, currency,
+                to_foundation_wallet, to_personal_wallet, to_amount, to_currency)
+        
+    elif(row['Transaction Kind'] == 'reimbursement'):
 
-print("Ricardo balance: {}".format( person.balance( blockchain, 'EUR', True ) ) )
-print("Vechain balance: {}".format( vechain.balance( blockchain, 'VET', True ) ) )
-print("Ricardo2 balance: {}".format( person2.balance( blockchain, 'EUR', True ) ) )
-print("Vechain2 balance: {}".format( vechain2.balance( blockchain, 'VET', True ) ) )
+        from_foundation_wallet = blockchain.build_foundation_wallet('Central deposit {}'.format(currency), currency, 200000000)
+        from_personal_wallet = blockchain.build_client_wallet( 'Personal {}'.format(currency), currency )
 
+        bus = BusBlock()
+        bus.send( from_foundation_wallet, from_personal_wallet, amount, currency )
+        blockchain.append( bus )
+        
+    elif(row['Transaction Kind'] == 'viban_purchase'):
+        
+        from_foundation_wallet = blockchain.build_foundation_wallet('Central deposit {}'.format(currency), currency, 200000000)
+        from_personal_wallet = blockchain.build_client_wallet( 'Personal {}'.format(currency), currency )
+
+        to_foundation_wallet = blockchain.build_foundation_wallet('Central deposit {}'.format(to_currency), to_currency, 200000000)
+        to_personal_wallet = blockchain.build_client_wallet( 'Personal {}'.format(to_currency), to_currency )
+
+        if currency == from_currency:
+            blockchain.transfer (from_foundation_wallet, from_personal_wallet, -amount, currency)
+        blockchain.exchange (
+                from_personal_wallet, from_foundation_wallet, -amount, currency,
+                to_foundation_wallet, to_personal_wallet, to_amount, to_currency)
+        
+    else:
+        print(row['Transaction Kind'] + ' --')
+        print(row)
+
+currency = 'EUR'
+wallet = blockchain.build_client_wallet( 'Personal {}'.format(currency), currency )
+print("profit: {}".format(blockchain.get_profit(wallet, currency)))
+ 
+print('-- balances --')
+for currency in currencies:
+    if isinstance(currency, str):
+        wallet = blockchain.build_client_wallet( 'Personal {}'.format(currency), currency )
+        print('{} balance: {}'.format(currency, wallet.balance(blockchain, currency, True)))
 
 app = Flask(__name__)
 
