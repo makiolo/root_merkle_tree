@@ -3,8 +3,6 @@ requirements:
 
 base58==1.0.0
 ecdsa==0.13
-mnemonic==0.20
-bip32utils
 flask==2.0.2
 flask-crontab==0.1.2
 flask-marshmallow==0.14.0
@@ -12,125 +10,41 @@ xmltodict==0.12.0
 
 https://flask-marshmallow.readthedocs.io/en/latest/
 '''
-import contextlib
 import os
 import math
 import hashlib
-import binascii
-import traceback
-from collections import defaultdict
-
 import base58
 import ecdsa
-import time
 import itertools
-import pprint
 import binascii
-import mnemonic
-import bip32utils
 import pandas as pd
-
-import sys
-import re
-from time import sleep
-
 import xmltodict
+from collections import defaultdict
+from datetime import datetime
+from flask import Flask, jsonify
 
 try:  # if is python3
     from urllib.request import urlopen
 except ImportError:  # if is python2
     from urllib2 import urlopen
 
-from flask import Flask, jsonify
 
+size_bits = 32
+cripto_curve = ecdsa.SECP256k1
+address_algorithm = 'ripemd160'
 
-def check_balance ( address ):
-    #Modify the value of the variable below to False if you do not want Bell Sound when the Software finds balance.
-    SONG_BELL = True
+# size_bits = 48
+# cripto_curve = ecdsa.BRAINPOOLP384r1
+# address_algorithm = 'sha384'
 
-    #Add time different of 0 if you need more security on the checks
-    WARN_WAIT_TIME = 0
-
-    blockchain_tags_json = [ 'total_received', 'final_balance', ]
-
-    SATOSHIS_PER_BTC = 1e+8
-
-    check_address = address
-
-    parse_address_structure = re.match ( r' *([a-zA-Z1-9]{1,34})', check_address )
-    if (parse_address_structure is not None):
-        check_address = parse_address_structure.group ( 1 )
-    else:
-        print ( "\nThis Bitcoin Address is invalid" + check_address )
-        exit ( 1 )
-
-    #Read info from Blockchain about the Address
-    reading_state = 1
-    while (reading_state):
-        try:
-            htmlfile = urlopen ( "https://blockchain.info/address/%s?format=json" % check_address, timeout = 10 )
-            htmltext = htmlfile.read ( ).decode ( 'utf-8' )
-            reading_state = 0
-        except:
-            print(traceback.format_exc())
-            reading_state += 1
-            print ( "Checking... " + str ( reading_state ) )
-            sleep (1)
-
-    print ( "\nBitcoin Address = " + check_address )
-
-    blockchain_info_array = [ ]
-    tag = ''
-    try:
-        for tag in blockchain_tags_json:
-            blockchain_info_array.append ( float ( re.search ( r'%s":(\d+),' % tag, htmltext ).group ( 1 ) ) )
-    except:
-        print ( "Error '%s'." % tag )
-        exit ( 1 )
-
-    for i, btc_tokens in enumerate ( blockchain_info_array ):
-
-        sys.stdout.write ( "%s \t= " % blockchain_tags_json [ i ] )
-        if btc_tokens > 0.0:
-            print ( "%.8f Bitcoin" % (btc_tokens / SATOSHIS_PER_BTC) )
-        else:
-            print ( "0 Bitcoin" )
-
-        if (SONG_BELL and blockchain_tags_json [ i ] == 'final_balance' and btc_tokens > 0.0):
-
-            #If you have a balance greater than 0 you will hear the bell
-            sys.stdout.write ( '\a\a\a' )
-            sys.stdout.flush ( )
-
-            return btc_tokens/SATOSHIS_PER_BTC
-
-
-def bip39(mnemonic_words):
-    # https://bitcoin.stackexchange.com/questions/76655/how-to-generate-public-and-private-key-pairs-from-the-12-seed-words-in-python
-    mobj = mnemonic.Mnemonic("english")
-    seed = mobj.to_seed(mnemonic_words)
-
-    bip32_root_key_obj = bip32utils.BIP32Key.fromEntropy(seed)
-    # fromEntropy
-    # fromExtendedKey
-    bip32_child_key_obj = bip32_root_key_obj.ChildKey(
-        44 + bip32utils.BIP32_HARDEN
-    ).ChildKey(
-        0 + bip32utils.BIP32_HARDEN
-    ).ChildKey(
-        0 + bip32utils.BIP32_HARDEN
-    ).ChildKey(0).ChildKey(0)
-
-    return {
-        'mnemonic_words': mnemonic_words,
-        'addr': bip32_child_key_obj.Address(),
-        'publickey': binascii.hexlify(bip32_child_key_obj.PublicKey()).decode(),
-        'privatekey': bip32_child_key_obj.WalletImportFormat(),
-    }
+precision = 12
+threshold = 10 ** -precision
+threshold2 = 10 ** -7
+super_supply = 200000000
 
 
 def generate_private_key():
-    return binascii.hexlify(os.urandom(32)).decode('utf-8')
+    return binascii.hexlify(os.urandom(size_bits)).decode('utf-8')
 
 
 def private_key_to_WIF(private_key):
@@ -140,14 +54,15 @@ def private_key_to_WIF(private_key):
 
 
 def private_key_to_public_key(private_key):
-    sign = ecdsa.SigningKey.from_string(binascii.unhexlify(private_key), curve = ecdsa.SECP256k1)
+    sign = ecdsa.SigningKey.from_string(binascii.unhexlify(private_key), curve=cripto_curve)
     return '04' + binascii.hexlify(sign.verifying_key.to_string()).decode('utf-8')
 
 
 def public_key_to_address(public_key, unit):
     alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-    count = 0; val = 0
-    var = hashlib.new('ripemd160')
+    count = 0
+    val = 0
+    var = hashlib.new(address_algorithm)
     var.update(hashlib.sha256(binascii.unhexlify(public_key.encode())).digest())
     doublehash = hashlib.sha256(hashlib.sha256(binascii.unhexlify(('00' + var.hexdigest()).encode())).digest()).hexdigest()
     address = '00' + var.hexdigest() + doublehash[0:8]
@@ -159,7 +74,7 @@ def public_key_to_address(public_key, unit):
     n = int(address, 16)
     output = []
     while (n > 0):
-        n, remainder = divmod (n, 58)
+        n, remainder = divmod(n, 58)
         output.append(alphabet[remainder])
     while (val < count):
         output.append(alphabet[0])
@@ -167,18 +82,33 @@ def public_key_to_address(public_key, unit):
     return ''.join(output[::-1]) + '_' + unit
 
 
+def sign_message(private_key, message):
+    sk = ecdsa.SigningKey.from_string(binascii.unhexlify(private_key), curve=cripto_curve)
+    message = message.encode('utf-8')
+    sig = sk.sign(message)
+    sign = binascii.hexlify(sig)
+    return sign.decode('utf-8')
+
+def verify_message(public_key, message, sign):
+    assert (public_key[:2] == '04')  # uncompressed public key
+    vk = ecdsa.VerifyingKey.from_string(binascii.unhexlify(public_key[2:]), curve=cripto_curve)
+    result = vk.verify(binascii.unhexlify(sign.encode('utf-8')), message.encode('utf-8'))
+    return result
+
+
 class Blockchain:
-    def __init__( self, seed, difficulty ):
+    def __init__(self, seed, difficulty):
         self.blocks = []
         self.difficulty = difficulty
         self.deposits = defaultdict(float)
         self.withdraws = defaultdict(float)
-        self.qty_before = defaultdict( float )
+        self.qty_before = defaultdict(float)
         self._null_wallet = NullWallet()
         self.foundation_wallets = {}
         self.client_wallets = {}
-        self.make_genesis( seed, difficulty )
-        
+        self.make_genesis(seed, difficulty)
+        self.cached_txtos = {}
+
     def __str__(self):
         message = '<blockchain hash="{}">\n'.format(self.hash())
         for i, block in enumerate(blockchain):
@@ -193,14 +123,14 @@ class Blockchain:
 
     def make_genesis(self, seed, bits):
         genesis_bus = BusBlock()
-        genesis = Block( self.hash(), seed, genesis_bus, 0, difficulty =bits )
+        genesis = Block(self.hash(), seed, genesis_bus, 0, difficulty=bits)
         genesis.pow()
         self.accept_block(genesis)
-        
-    def make_money( self, foundation_wallet, supply, unit ):
+
+    def make_money(self, foundation_wallet, supply, unit):
         supply_bus = BusBlock()
-        supply_bus.send(self, self._null_wallet, foundation_wallet, supply, unit )
-        block = self.make_block( supply_bus )
+        supply_bus.send(self, self._null_wallet, foundation_wallet, supply, unit, description='{} FOUNDATION'.format(unit))
+        block = self.make_block(supply_bus)
         block.pow()
         self.accept_block(block)
 
@@ -227,88 +157,92 @@ class Blockchain:
             hashes.append(block.hash())
         return Blockchain.calculate_root_merkle_hash(hashes)
 
-    def make_block( self, busblock ):
-        return Block( self.hash(), self.last().hash(), busblock, 0, difficulty=self.difficulty )
-    
-    def make_foundation_wallet( self, hash, unit, supply ):
+    def make_block(self, busblock):
+        return Block(self.hash(), self.last().hash(), busblock, 0, difficulty=self.difficulty)
+
+    def make_foundation_wallet(self, hash, unit, supply):
         wallet = FoundationWallet(hash, unit)
-        blockchain.make_money( wallet, supply, unit )
+        blockchain.make_money(wallet, supply, unit)
         return wallet
-    
-    def make_client_wallet( self, hash, unit ):
-        wallet = HashWallet( hash, unit )
-        self.init_profit( wallet, unit )
+
+    def make_client_wallet(self, hash, unit):
+        wallet = HashWallet(hash, unit)
+        self.init_profit(wallet, unit)
         return wallet
-    
-    def send(self, from_wallet, to_wallet, qty_, unit_):
-        bus = BusBlock()
-        bus.send(self, from_wallet, to_wallet, qty_, unit_ )
-        blockchain.append( bus )
 
     def accept_block(self, block):
         if not block.solved:
             raise Exception('Block is not solved')
+        # register txtos in caches
+        for trans in block.transactions:
+            txid = trans.data.hash()
+            for vout, txto in enumerate(trans.data._tos):
+                self.cached_txtos[(txid, vout)] = txto
+        for trans in block.transactions:
+            for txfrom in trans.data._froms:
+                txto = self.cached_txtos[(txfrom.txid, txfrom.vout)]
+                valid_sign = verify_message(txto.public_key, txto.hash(), txfrom.signature)
+                if not valid_sign:
+                    raise Exception('Verify lock / unlock scripts are invalid.')
         self.blocks.append(block)
 
-    # def search_next_txfrom(self, i, j, txto):
-    #     first = True
-    #     for block in self.blocks[i:]:
-    #         if first:
-    #             trans = block.transactions[j:]
-    #             first = False
-    #         else:
-    #             trans = block.transactions
-    #         for transaction in trans:
-    #             for txfrom in transaction.data._froms:
-    #                 if txfrom == txto:
-    #                     return txfrom
-                    
-    def is_unspent( self, transaction, txto ):
-        txid = transaction.hash()
+    def get_txto(self, txid, vout):
+        '''
+        cached
+        '''
+        return self.cached_txtos[(txid, vout)]
+
+    def is_unspent(self, transaction, txto):
+        txid = transaction.data.hash()
         for block in blockchain.blocks:
             for trans in block.transactions:
-                for txfrom in trans.data._froms:
-                    if      txfrom.txid == txid and \
-                            txfrom.wallet == txto.wallet and \
-                            txfrom.unit == txto.unit and \
-                            txfrom.qty == txto.qty:
-                        return False
+                if transaction.data.unit == trans.data.unit:
+                    for txfrom in trans.data._froms:
+                        txto_solved = self.get_txto(txfrom.txid, txfrom.vout)
+                        if      txfrom.txid == txid and \
+                                txto_solved.public_key == txto.public_key and \
+                                txto_solved.qty == txto.qty:
+                            return False
         return True
-                    
-    def get_unspent_2_0( self, wallet, qty, unit ):
+
+    def calculate_balance(self, public_key, unit):
+        balance = 0.0
+        for block in blockchain.blocks:
+            for transaction in block.transactions:
+                if transaction.data.unit == unit:
+                    for txto in transaction.data._tos:
+                        if txto.public_key == public_key:
+                            if self.is_unspent(transaction, txto):
+                                balance += txto.qty
+        return balance
+
+    def calculate_unspent(self, public_key, qty, unit):
+        '''
+        use FIFO
+        '''
         total_qty = qty
         candidates = []
         for block in blockchain.blocks:
             for transaction in block.transactions:
-                if total_qty > 0.0:
-                    for txto in transaction.data._tos:
-                        if txto.wallet == wallet and txto.unit == unit:
-                            if self.is_unspent(transaction.data, txto):
+                if transaction.data.unit == unit:
+                    for vout, txto in enumerate(transaction.data._tos):
+                        if total_qty <= threshold:
+                            break
+                        if txto.public_key == public_key:
+                            if self.is_unspent(transaction, txto):
                                 total_qty -= txto.qty
-                                candidates.append((transaction.data, txto))
+                                candidates.append((transaction.data, txto, vout))
         return candidates
 
-    def append (self, bus):
-        '''
-        TODO:
-        me recorro el bus block y lo convierto
-        en un "TransactionTree"
-        '''
-        new_block = self.make_block ( bus )
-        new_block.pow ( )
-        self.accept_block ( new_block )
+    def append(self, bus):
+        new_block = self.make_block(bus)
+        new_block.pow()
+        self.accept_block(new_block)
         if self.valid():
             return new_block
         else:
             self.blocks.pop()
             raise Exception('Error appending BusBlock.')
-        
-    def exchange ( self, from_wallet, from_supply, baseQty, baseUnit, to_supply, to_wallet, quoteQty, quoteUnit ):
-        bus = BusBlock()
-        bus.doble_send ( self, 
-                from_wallet, from_supply, baseQty, baseUnit, 
-                to_supply, to_wallet, quoteQty, quoteUnit)
-        self.append( bus )
 
     @staticmethod
     def calculate_root_merkle_hash(hashes):
@@ -328,88 +262,68 @@ class Blockchain:
             return '{:064d}'.format(0)
 
     def valid(self):
-        # check positive balances and blockchain integrity
-        publics = []
-        for block in self.blocks:
-            for transaction in block.transactions:
-                # la null wallet no puede recibir dinero de nadie
-                # if transaction.data._to == self._null_wallet.address:
-                #     raise Exception("NullWallet can't receive transactions.")
-                
-                # una wallet de tipo foundation, solo recibe de la null wallet
-                # if transaction.data._to.endswith('FOUNDATION'):
-                #     if transaction.data._from != self._null_wallet.address:
-                #         raise Exception("Foundation wallet only receive from NullWallet")
-                
-                # cada wallet foundation es única por nombre
-                # la transferencia desde la null wallet a dicho simbolo de foundation debe ser
-                # singleton, TODO:
-                
-                for txfrom in transaction.data._froms:
-                    element = (txfrom.wallet, txfrom.unit)
-                    if element not in publics:
-                        publics.append( element )
-                for txto in transaction.data._tos:
-                    element = (txto.wallet, txto.unit)
-                    if element not in publics:
-                        publics.append( element )
-                
-        # skip null address
-        # for public_address, unit in publics:
-        #     if public_address == self._null_wallet.address:
-        #         continue
-        #     wallet = PublicWallet( public_address )
-        #     balan = wallet.balance(self, unit)
-        #     if balan < 0.0:
-        #         raise Exception('Wallet {} with invalid balance {}.'.format(public_address, balan))
-        
         # check integrity
-        # TODO: check difficulty expected
         i = 0
-        while i + 1 < len(self.blocks):
-            if self.blocks[i].version != self.blocks[i+1].version:
+        while i < len(self.blocks) - 1:
+            if self.blocks[i].version != self.blocks[i + 1].version:
                 return False
-            if self.blocks[i].hash() != self.blocks[i+1].prev_hash:
+            if self.blocks[i].hash() != self.blocks[i + 1].prev_hash:
                 return False
-            if self.blocks[i].merkle_root == self.blocks[i+1].merkle_root:
+            if self.blocks[i].merkle_root == self.blocks[i + 1].merkle_root:
                 return False
             if self.blocks[i].timestamp >= self.blocks[i + 1].timestamp:
                 return False
             if not self.blocks[i].hash().startswith(self.blocks[i].target):
                 return False
-            if not self.blocks[i+1].hash().startswith(self.blocks[i+1].target):
-                return False
-            
-            i += 2
+            for trans in self.blocks[i].transactions:
+                if len(trans.data._froms) > 0:
+                    if abs(trans.data.total_input(self, trans.data.unit) - trans.data.total_output(self, trans.data.unit)) > threshold2:
+                        print('warning {} {} vs {} {}'.format(  trans.data.total_input(trans.data.unit), trans.data.unit,
+                                                                trans.data.total_output(trans.data.unit), trans.data.unit))
+                        return False
+
+            i += 1
         return True
 
-    def init_profit( self, wallet, unit ):
+    def init_profit(self, wallet, unit):
         self.deposits[(wallet, unit)] = 0
         self.withdraws[(wallet, unit)] = 0
-        self.qty_before[unit ] = wallet.balance( self, unit )
+        self.qty_before[unit] = wallet.balance(self, unit)
 
-    def get_profit( self, wallet, unit ):
-        qty_after = wallet.balance( blockchain, unit )
+    def get_profit(self, wallet, unit):
+        qty_after = wallet.balance(self, unit)
         profit = qty_after - self.qty_before[unit] + self.withdraws[(wallet, unit)] - self.deposits[(wallet, unit)]
         return profit
 
-    def transfer( self, from_wallet, to_wallet, qty, unit ):
+    def exchange(self, from_wallet, from_supply, baseQty, baseUnit, to_supply, to_wallet, quoteQty, quoteUnit, timestamp=None, description=None, native_currency=None, native_amount=None):
         bus = BusBlock()
-        bus.send( self, from_wallet, to_wallet, qty, unit )
-        self.append( bus )
+        bus.doble_send(self,
+                       from_wallet, from_supply, baseQty, baseUnit,
+                       to_supply, to_wallet, quoteQty, quoteUnit, timestamp=timestamp, description=description, native_currency=native_currency, native_amount=native_amount)
+        self.append(bus)
+
+    def transfer(self, from_wallet, to_wallet, qty, unit, timestamp=None, description=None, native_currency=None, native_amount=None):
+        bus = BusBlock()
+        bus.send(self, from_wallet, to_wallet, qty, unit, timestamp=timestamp, description=description, native_currency=native_currency, native_amount=native_amount)
+        self.append(bus)
         self.withdraws[(from_wallet, unit)] = self.withdraws[(from_wallet, unit)] + qty
         self.deposits[(to_wallet, unit)] = self.deposits[(to_wallet, unit)] + qty
 
+    def send(self, from_wallet, to_wallet, qty_, unit_, timestamp=None, description=None, native_currency=None, native_amount=None):
+        bus = BusBlock()
+        bus.send(self, from_wallet, to_wallet, qty_, unit_, timestamp=timestamp, description=description, native_currency=native_currency, native_amount=native_amount)
+        self.append(bus)
+
 
 class Block:
-    def __init__( self, merkle_root, prev_hash, transactions, nonce, difficulty ):
+    def __init__(self, merkle_root, prev_hash, transactions, nonce, difficulty):
         self.version = 0x02000000
         self.prev_hash = prev_hash
         self.merkle_root = merkle_root
         self.difficulty = difficulty
         self.target = "0" * difficulty
         self.nonce = nonce
-        self.timestamp = time.time()
+        self.timestamp = datetime.now()
         self.transactions = transactions
         self.solved = False
 
@@ -433,89 +347,87 @@ class Block:
         return guess_hash[:bits] == self.target
 
     def pow(self):
-        '''
-        calculate nonce
-
-        :param bits:
-        :return:
-        '''
         for nonce in itertools.count():  # inifinite generator by brute force
             if self.check_nonce(nonce, self.difficulty):
                 self.solved = True
                 return nonce
 
-class Tx:
-    def __init__(self, wallet, qty, unit):
-        self.wallet = wallet
-        self.qty = qty
-        self.unit = unit
 
-    def __eq__(self, other):
-        return self.wallet == other.wallet and \
-               self.qty == other.qty and \
-               self.unit == other.qty
-
-
-class TxFrom(Tx):
-    def __init__(self, txid, wallet, qty, unit):
+class TxFrom:
+    def __init__(self, txid, vout, signature):
         self.txid = txid
-        super().__init__(wallet, qty, unit)
-        
+        self.vout = vout
+        self.signature = signature
+
     def __str__(self):
-        return '<from txid="{}" wallet="{}" qty="{:.8f}" unit="{}" />\n'.format(self.txid, self.wallet, self.qty, self.unit)
+        return '<from txid="{}" vout="{}" signature="{}" />\n'.format(self.txid, self.vout, self.signature)
 
     def hash(self):
         return hashlib.sha256(self.__str__().encode()).hexdigest()
 
 
-class TxTo(Tx):
-    def __init__(self, wallet, qty, unit):
-        super().__init__(wallet, qty, unit)
+class TxTo:
+    def __init__(self, qty, public_key):
+        self.qty = round(qty, precision)
+        self.public_key = public_key
 
     def __str__(self):
-        return '<to wallet="{}" qty="{:.8f}" unit="{}" />\n'.format(self.wallet, self.qty, self.unit)
+        return '<to qty="{0:.{2}g}" public_key="{1}" />\n'.format(self.qty, self.public_key, precision)
 
     def hash(self):
         return hashlib.sha256(self.__str__().encode()).hexdigest()
 
 
 class Transaction:
-    def __init__(self):
-        self.timestamp = time.time()
+    def __init__(self, qty, unit, timestamp=None, description=None, native_currency=None, native_amount=None):
+        self.qty = qty
+        self.unit = unit
+        if timestamp is None:
+            self.timestamp = datetime.now()
+        else:
+            self.timestamp = timestamp
+        if description is None:
+            self.description = ""
+        else:
+            self.description = description
+        self.native_currency = native_currency
+        self.native_amount = native_amount
         self._froms = []
         self._tos = []
-        
-    def add_from( self, txid, wallet, qty, unit):
-        self._froms.append(TxFrom(txid, wallet, qty, unit))
 
-    def add_to( self, wallet, qty, unit ):
-        self._tos.append(TxTo(wallet, qty, unit))
+    def add_from(self, txid, vout, signature):
+        self._froms.append(TxFrom(txid, vout, signature))
+
+    def add_to(self, qty, public_key):
+        self._tos.append(TxTo(qty, public_key))
 
     def __str__(self):
-        message = '\t\t\t<transaction_content timestamp="{}">\n'.format(self.timestamp)
+        try:
+            extra = ' price="{}"'.format(float(self.native_amount) / float(self.qty))
+        except TypeError:
+            extra = ''
+        message = '\t\t\t<transaction_content timestamp="{}" description="{}" qty="{}" unit="{}" native_amount="{}" native_currency="{}"{}>\n'.format(self.timestamp, self.description, self.qty, self.unit, self.native_amount, self.native_currency, extra)
         for txfro in self._froms:
             message += '\t\t\t\t{}\n'.format(txfro)
         for txto in self._tos:
             message += '\t\t\t\t{}\n'.format(txto)
         message += '\t\t\t</transaction_content>\n'
         return message
-    
-    def total_input( self, unit ):
+
+    def total_input(self, blockchain, unit):
         qty = 0.0
         for txfrom in self._froms:
-            if txfrom.unit == unit:
-                qty += txfrom.qty
+            txto_solved = blockchain.get_txto(txfrom.txid, txfrom.vout)
+            if self.unit == unit:
+                qty += txto_solved.qty
         return qty
-    
-    def total_output( self, unit ):
+
+    def total_output(self, blockchain, unit):
         qty = 0.0
         for txto in self._tos:
-            if txto.unit == unit:
+            if self.unit == unit:
                 qty += txto.qty
         return qty
-    
-    def fee( self, unit ):
-        return self.total_input(unit) - self.total_output(unit)
 
     def hash(self):
         message = str(self.timestamp) + '\n'
@@ -527,7 +439,7 @@ class Transaction:
 
 
 class TransactionWrap:
-    def __init__( self, data, sign, public ):
+    def __init__(self, data, sign, public):
         self.data = data
         self.sign = sign
         self.public = public
@@ -546,76 +458,54 @@ class TransactionWrap:
 class BusBlock:
     def __init__(self):
         self.transactions = []
-        
+
     def __iter__(self):
         return iter(self.transactions)
-    
+
     def __len__(self):
         return len(self.transactions)
-    
+
     def __getitem__(self, item):
         return self.transactions[item]
 
-    def sign_message(self, private_key, message):
-        sk = ecdsa.SigningKey.from_string(binascii.unhexlify(private_key), curve=ecdsa.SECP256k1)
-        message = message.encode('utf-8')
-        sig = sk.sign(message)
-        sign = binascii.hexlify(sig)
-        return sign.decode('utf-8')
+    def doble_send(self, blockchain, from_wallet, from_supply, baseQty, baseUnit, to_supply, to_wallet, quoteQty, quoteUnit, timestamp=None, description=None, native_currency=None, native_amount=None):
+        self.send(blockchain, from_wallet, from_supply, baseQty, baseUnit, timestamp=timestamp, description='1/2 ' + description, native_currency=native_currency, native_amount=native_amount)
+        self.send(blockchain, to_supply, to_wallet, quoteQty, quoteUnit, timestamp=timestamp, description='2/2 ' + description, native_currency=native_currency, native_amount=native_amount)
 
+    def send(self, blockchain, from_wallet, to_wallet, qty_, unit_, timestamp=None, description=None, native_currency=None, native_amount=None):
 
-    def verify_message(self, public_key, message, sign):
-        assert(public_key[:2] == '04')  # uncompressed public key
-        vk = ecdsa.VerifyingKey.from_string(binascii.unhexlify(public_key[2:]), curve=ecdsa.SECP256k1)
-        result = vk.verify(binascii.unhexlify(sign.encode('utf-8')), message.encode('utf-8'))
-        return result
-
-
-    def doble_send ( self, blockchain, from_wallet, from_supply, baseQty, baseUnit, to_supply, to_wallet, quoteQty, quoteUnit ):
-        self.send ( blockchain, from_wallet, from_supply, baseQty, baseUnit)
-        self.send ( blockchain, to_supply, to_wallet, quoteQty, quoteUnit )
-
-    def send(self, blockchain, from_wallet, to_wallet, qty_, unit_):
-        # buscar en todas las transacciones de "from_wallet"
-        # elegir por FIFO, las primeras no gastadas (UTXO)
-        # nos recorremos un arbol en 
-        # 
-        # Chat
-        # 
-        # 
-        # Profile picture of Villar Robledillo Cesar.
-        # Villar Robledillo Cesar
-        # 
-        # 
-        #   
-        # 
-        # Settingsprofundidad
-        # los nodos hoja son los UTXOS (dinero no gastado)
-        
-        transaction = Transaction()
+        transaction = Transaction(qty_, unit_, timestamp=timestamp, description=description, native_currency=native_currency, native_amount=native_amount)
         if from_wallet != blockchain._null_wallet:
-            txtos = blockchain.get_unspent_2_0(from_wallet, qty_, unit_)
-            for trans, txto in txtos:
-                transaction.add_from(trans.hash(), txto.wallet, txto.qty, txto.unit)
+
+            txtos = blockchain.calculate_unspent(from_wallet.public, qty_, unit_)
+
+            for trans, txto, vout in txtos:
+                serialized_txto = txto.hash()
+                signature = sign_message(from_wallet.private, serialized_txto)
+                transaction.add_from(trans.hash(), vout, signature)
+
             spent_qty = qty_
-            for _, txto in txtos:
-                if spent_qty < txto.qty:
-                    transaction.add_to(to_wallet, spent_qty, txto.unit)
-                    transaction.add_to(from_wallet, txto.qty - spent_qty, txto.unit)
-                    spent_qty = 0.0
+            for _, txto, _ in txtos:
+                # el monto es mayor que la cantidad necesaria, devuelveme el cambio
+                if txto.qty > spent_qty:
+                    transaction.add_to(spent_qty, to_wallet.public)
+                    change = txto.qty - spent_qty
+                    if change > threshold:
+                        transaction.add_to(change, from_wallet.public)
+                    spent_qty -= spent_qty
                 else:
-                    transaction.add_to(to_wallet, txto.qty, txto.unit)
+                    transaction.add_to(txto.qty, to_wallet.public)
                     spent_qty -= txto.qty
-                if spent_qty == 0.0:
+                if abs(spent_qty) <= threshold:
                     break
-            if(spent_qty != 0.0):
+            if abs(spent_qty) > threshold:
                 print("error {}: {} {} {} {}".format(spent_qty, from_wallet, to_wallet, qty_, unit_))
         else:
             # txto foundation
-            transaction.add_to(to_wallet, qty_, unit_)
+            transaction.add_to(qty_, to_wallet.public)
         message = str(transaction)
-        sign = self.sign_message(from_wallet.private, message)
-        valid_sign = self.verify_message(from_wallet.public, message, sign)
+        sign = sign_message(from_wallet.private, message)
+        valid_sign = verify_message(from_wallet.public, message, sign)
         if not valid_sign:
             raise Exception('Error generating sign.')
         transaction_wrap = TransactionWrap(transaction, sign, from_wallet.public)
@@ -637,12 +527,16 @@ class BusBlock:
 
 
 class PublicWallet:
-    def __init__(self, address):
-        self.address = address
-        
+    def __init__(self, unit, private_key, suffix=None):
+        self.public = private_key_to_public_key(private_key)
+        self.import_key = private_key_to_WIF(private_key)
+        if suffix is not None:
+            unit = unit + suffix
+        self.address = public_key_to_address(self.public, unit)
+
     def __str__(self):
         return self.address
-    
+
     def __eq__(self, other):
         if isinstance(other, str):
             return self.address == other
@@ -655,94 +549,73 @@ class PublicWallet:
     def endpoint(self):
         return self.address
 
-    def balance( self, blockchain, unit, format=False ):
+    def balance(self, blockchain, unit, format=False):
+        '''
+        txto = income
+        txfrom = expenses
+        balance = sum(txto) - sum(txfrom)
+        '''
         if format:
-            return '{} {}'.format(self.balance_income(blockchain, unit) - self.balance_expenses(blockchain, unit), unit)
+            return '{} {}'.format(blockchain.calculate_balance(self.public, unit), unit)
         else:
-            return self.balance_income(blockchain, unit) - self.balance_expenses(blockchain, unit)
-
-    def balance_expenses( self, blockchain, unit ):
-        balan = 0.0
-        for block in blockchain.blocks:
-            for transaction in block.transactions:
-                for txfrom in transaction.data._froms:
-                    if txfrom.wallet == self.address and txfrom.unit == unit:
-                        # withdraw to other
-                        balan += txfrom.qty
-        return balan
-    
-    def balance_income( self, blockchain, unit ):
-        balan = 0.0
-        for block in blockchain.blocks:
-            for transaction in block.transactions:
-                for txto in transaction.data._tos:
-                    if txto.wallet == self.address and txto.unit == unit:
-                        # deposit from other
-                        balan += txto.qty
-        return balan
+            return blockchain.calculate_balance(self.public, unit)
 
 
-class PrivateWallet( PublicWallet ):
-    def __init__(self, unit, private_key=None):
+class PrivateWallet(PublicWallet):
+    def __init__(self, unit, private_key=None, suffix=None):
         if private_key is None:
             self.private = generate_private_key()
         else:
             self.private = binascii.hexlify(private_key.encode('utf-8')).decode('utf-8')
-        self.public = private_key_to_public_key(self.private)
-        self.import_key = private_key_to_WIF(self.private)
-        super().__init__(public_key_to_address(self.public, unit))
+        super().__init__(unit, self.private, suffix=suffix)
+
+
+class NullWallet(PublicWallet):
+    def __init__(self):
+        self.unit = 'NULL'
+        self.private = binascii.hexlify(('0'*size_bits).encode('utf-8')).decode('utf-8')
+        super().__init__(self.unit, self.private)
 
 
 class HashWallet(PrivateWallet):
     def __init__(self, name, unit):
         self.name = name
-        super().__init__(unit, hashlib.sha256(name.encode()).hexdigest()[:32])
+        self.unit = unit
+        private = hashlib.sha256(name.encode()).hexdigest()[:size_bits]
+        super().__init__(unit, private)
 
 
-class NullWallet( PublicWallet ):
-    def __init__(self):
-        self.private = binascii.hexlify(('0'*32).encode('utf-8')).decode('utf-8')
-        self.public = private_key_to_public_key(self.private)
-        self.import_key = private_key_to_WIF(self.private)
-        super().__init__(public_key_to_address(self.public, 'NULL'))
-
-
-
-class FoundationWallet( PrivateWallet ):
+class FoundationWallet(PrivateWallet):
     def __init__(self, name, unit):
         self.name = name
         self.unit = unit
-        super().__init__('{}-FOUNDATION'.format(unit), hashlib.sha256(name.encode()).hexdigest()[:32])
+        private = hashlib.sha256(name.encode()).hexdigest()[:size_bits]
+        super().__init__(self.unit, private, suffix="_FOUNDATION")
 
 
-dataset_csv = r"C:\Users\x335336\OneDrive - Santander Office 365\Documents\crypto_transactions_record_20211213_195307.csv"
-print(dataset_csv)
+# dataset_csv = r"C:\Users\x335336\OneDrive - Santander Office 365\Documents\crypto_transactions_record_20211213_195307.csv"
+dataset_csv = os.path.join(os.path.dirname(os.path.abspath(__file__)), "crypto_transactions_record_20211213_195307.csv")
 df = pd.read_csv(dataset_csv)
 
 seed = 1234
 difficulty = 2
-blockchain = Blockchain( seed, difficulty )
+blockchain = Blockchain(seed, difficulty)
+df.index = pd.to_datetime(df['Timestamp (UTC)'])
+df.drop('Timestamp (UTC)', axis=1, inplace=True)
+df = df.sort_index()
 
-'''
-'Timestamp (UTC)', 
-'Transaction Description', 
-'Currency', 
-'Amount',
-'To Currency', 
-'To Amount', 
-'Native Currency', 
-'Native Amount',
-'Native Amount (in USD)', 
-'Transaction Kind'
-'''
 currencies = []
 for index, row in df.iterrows():
-    currency = row[ 'Currency' ]
-    amount = row[ 'Amount' ]
-    native_currency = row[ 'Native Currency' ]
-    native_amount = row[ 'Native Amount' ]
+    timestamp = index.to_pydatetime()
+    currency = row['Currency']
+    amount = row['Amount']
+    native_currency = row['Native Currency']
+    native_amount = row['Native Amount']
     to_currency = row['To Currency']
     to_amount = row['To Amount']
+    kind = row['Transaction Kind']
+    description = '{} . {} {} -> {}'.format(row['Transaction Description'], kind, amount, to_amount)
+
     if currency not in currencies:
         if isinstance(currency, str) or not math.isnan(currency):
             currencies.append(currency)
@@ -750,71 +623,70 @@ for index, row in df.iterrows():
         if isinstance(currency, str) or not math.isnan(to_currency):
             currencies.append(to_currency)
 
-    super_supply = 200000000
-    
-    if(row['Transaction Kind'] == 'crypto_withdrawal') or (row['Transaction Kind'] == 'crypto_wallet_swap_debited') or (row['Transaction Kind'] == 'card_top_up'):
+    if (kind == 'crypto_withdrawal') or (kind == 'crypto_wallet_swap_debited') or (kind == 'card_top_up'):
 
         from_foundation_wallet = blockchain.build_foundation_wallet('Central deposit {}'.format(currency), currency, super_supply)
-        from_personal_wallet = blockchain.build_client_wallet( 'Personal {}'.format(currency), currency )
-        
-        blockchain.transfer(from_personal_wallet, from_foundation_wallet, -amount, currency)
-        
-    elif(row['Transaction Kind'] == 'crypto_deposit') or (row['Transaction Kind'] == 'crypto_wallet_swap_credited'):
+        from_personal_wallet = blockchain.build_client_wallet('Personal {}'.format(currency), currency)
+
+        blockchain.transfer(from_personal_wallet, from_foundation_wallet, -amount, currency, timestamp=timestamp, description=description, native_currency=native_currency, native_amount=native_amount)
+
+    elif (kind == 'crypto_deposit') or (kind == 'crypto_wallet_swap_credited'):
 
         from_foundation_wallet = blockchain.build_foundation_wallet('Central deposit {}'.format(currency), currency, super_supply)
-        from_personal_wallet = blockchain.build_client_wallet( 'Personal {}'.format(currency), currency )
-        
-        blockchain.transfer(from_foundation_wallet, from_personal_wallet, amount, currency)
+        from_personal_wallet = blockchain.build_client_wallet('Personal {}'.format(currency), currency)
 
-    elif(row['Transaction Kind'] == 'dynamic_coin_swap_debited') or (row['Transaction Kind'] == 'dynamic_coin_swap_credited') or (row['Transaction Kind'] == 'dynamic_coin_swap_bonus_exchange_deposit') or (row['Transaction Kind'] == 'lockup_lock'):
+        blockchain.transfer(from_foundation_wallet, from_personal_wallet, amount, currency, timestamp=timestamp, description=description, native_currency=native_currency, native_amount=native_amount)
+
+    elif (kind == 'dynamic_coin_swap_debited') or (
+            kind == 'dynamic_coin_swap_credited') or (
+            kind == 'dynamic_coin_swap_bonus_exchange_deposit') or (
+            kind == 'lockup_lock'):
         pass
-        
-    elif (row['Transaction Kind'] == 'crypto_exchange') or (row['Transaction Kind'] == 'crypto_viban_exchange'):
+
+    elif (kind == 'crypto_exchange') or (kind == 'crypto_viban_exchange'):
 
         from_foundation_wallet = blockchain.build_foundation_wallet('Central deposit {}'.format(currency), currency, super_supply)
-        from_personal_wallet = blockchain.build_client_wallet( 'Personal {}'.format(currency), currency )
+        from_personal_wallet = blockchain.build_client_wallet('Personal {}'.format(currency), currency)
 
         to_foundation_wallet = blockchain.build_foundation_wallet('Central deposit {}'.format(to_currency), to_currency, super_supply)
-        to_personal_wallet = blockchain.build_client_wallet( 'Personal {}'.format(to_currency), to_currency )
+        to_personal_wallet = blockchain.build_client_wallet('Personal {}'.format(to_currency), to_currency)
 
-        blockchain.exchange (
-                from_personal_wallet, from_foundation_wallet, -amount, currency,
-                to_foundation_wallet, to_personal_wallet, to_amount, to_currency)
-        
-    elif(row['Transaction Kind'] == 'reimbursement'):
+        blockchain.exchange(
+            from_personal_wallet, from_foundation_wallet, -amount, currency,
+            to_foundation_wallet, to_personal_wallet, to_amount, to_currency, timestamp=timestamp, description=description, native_currency=native_currency, native_amount=native_amount)
+
+    elif (kind == 'reimbursement'):
 
         from_foundation_wallet = blockchain.build_foundation_wallet('Central deposit {}'.format(currency), currency, super_supply)
-        from_personal_wallet = blockchain.build_client_wallet( 'Personal {}'.format(currency), currency )
+        from_personal_wallet = blockchain.build_client_wallet('Personal {}'.format(currency), currency)
 
-        blockchain.send( from_foundation_wallet, from_personal_wallet, amount, currency )
-        
-    elif(row['Transaction Kind'] == 'viban_purchase'):
-        
+        blockchain.send(from_foundation_wallet, from_personal_wallet, amount, currency, timestamp=timestamp, description=description, native_currency=native_currency, native_amount=native_amount)
+
+    elif (kind == 'viban_purchase'):
+
         from_foundation_wallet = blockchain.build_foundation_wallet('Central deposit {}'.format(currency), currency, super_supply)
-        from_personal_wallet = blockchain.build_client_wallet( 'Personal {}'.format(currency), currency )
+        from_personal_wallet = blockchain.build_client_wallet('Personal {}'.format(currency), currency)
 
         to_foundation_wallet = blockchain.build_foundation_wallet('Central deposit {}'.format(to_currency), to_currency, super_supply)
-        to_personal_wallet = blockchain.build_client_wallet( 'Personal {}'.format(to_currency), to_currency )
+        to_personal_wallet = blockchain.build_client_wallet('Personal {}'.format(to_currency), to_currency)
 
         if currency == native_currency:
-            blockchain.transfer (from_foundation_wallet, from_personal_wallet, -amount, currency)
-        blockchain.exchange (
-                from_personal_wallet, from_foundation_wallet, -amount, currency,
-                to_foundation_wallet, to_personal_wallet, to_amount, to_currency)
-        
+            blockchain.transfer(from_foundation_wallet, from_personal_wallet, -amount, currency, timestamp=timestamp, description='deposit ' + description, native_currency=native_currency, native_amount=native_amount)
+
+        blockchain.exchange(
+            from_personal_wallet, from_foundation_wallet, -amount, currency,
+            to_foundation_wallet, to_personal_wallet, to_amount, to_currency, timestamp=timestamp, description=description, native_currency=native_currency, native_amount=native_amount)
+
     else:
-        print(row['Transaction Kind'] + ' --')
+        print(kind + ' --')
         print(row)
 
-currency = 'EUR'
-wallet = blockchain.build_client_wallet( 'Personal {}'.format(currency), currency )
-print("profit: {}".format(blockchain.get_profit(wallet, currency)))
- 
 print('-- balances --')
 for currency in currencies:
     if isinstance(currency, str):
-        wallet = blockchain.build_client_wallet( 'Personal {}'.format(currency), currency )
-        print('{} balance: {}'.format(currency, wallet.balance(blockchain, currency, True)))
+        wallet = blockchain.build_client_wallet('Personal {}'.format(currency), currency)
+        print('{} - balance: {} - profit: {}'.format(currency, wallet.balance(blockchain, currency, True), blockchain.get_profit(wallet, currency)))
+
 
 app = Flask(__name__)
 
@@ -853,3 +725,13 @@ def mined_block():
 
 
 app.run('127.0.0.1', 5000)
+
+
+'''
+
+
+revisar:
+1/2 EUR -> SOL . viban_purchase -219.8 -> 1.1788
+
+
+'''
