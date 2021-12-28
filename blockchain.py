@@ -281,7 +281,6 @@ class Blockchain:
                         print('warning {} {} vs {} {}'.format(  trans.data.total_input(trans.data.unit), trans.data.unit,
                                                                 trans.data.total_output(trans.data.unit), trans.data.unit))
                         return False
-
             i += 1
         return True
 
@@ -484,20 +483,31 @@ class BusBlock:
                 signature = sign_message(from_wallet.private, serialized_txto)
                 transaction.add_from(trans.hash(), vout, signature)
 
+            # deposit EUR -> JUV . viban_purchase -53.38 -> 5.0
+
             spent_qty = qty_
+            group_txtos = defaultdict(float)
             for _, txto, _ in txtos:
                 # el monto es mayor que la cantidad necesaria, devuelveme el cambio
                 if txto.qty > spent_qty:
-                    transaction.add_to(spent_qty, to_wallet.public)
+                    group_txtos[to_wallet.public] = group_txtos[to_wallet.public] + spent_qty
                     change = txto.qty - spent_qty
                     if change > threshold:
-                        transaction.add_to(change, from_wallet.public)
+                        group_txtos[from_wallet.public] = group_txtos[from_wallet.public] + change
                     spent_qty -= spent_qty
                 else:
-                    transaction.add_to(txto.qty, to_wallet.public)
+                    group_txtos[to_wallet.public] = group_txtos[to_wallet.public] + txto.qty
                     spent_qty -= txto.qty
                 if abs(spent_qty) <= threshold:
                     break
+
+            '''
+            Agrupar todos los TxTo que van a la misma dirección
+            minimizar el número de salidas para ahorrar bytes
+            '''
+            for k, v in group_txtos.items():
+                transaction.add_to(v, k)
+            
             if abs(spent_qty) > threshold:
                 print("error {}: {} {} {} {}".format(spent_qty, from_wallet, to_wallet, qty_, unit_))
         else:
@@ -681,6 +691,7 @@ for index, row in df.iterrows():
         print(kind + ' --')
         print(row)
 
+        
 print('-- balances --')
 for currency in currencies:
     if isinstance(currency, str):
@@ -735,3 +746,4 @@ revisar:
 
 
 '''
+
