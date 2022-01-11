@@ -5,6 +5,8 @@ Generate root merkle tree hash in python.
 I use https://github.com/bitcoin/bitcoin as reference:
     BlockBuildMerkleTree --> Satoshi implmentation
     BlockMerkleRoot ---> new bitcoin core implementation
+    
+   MAST paper: https://www.mit.edu/~jlrubin/public/pdfs/858report.pdf
 
 '''
 import pandas as pd
