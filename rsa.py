@@ -57,6 +57,7 @@ def generate_random_primes ( seed, len=2 ):
         while True:
             # numeros de Marsenne
             # candidate = bin_pow(2, n, msb=True) - 1
+            # TODO: criba de Atkin: https://es.wikipedia.org/wiki/Criba_de_Atkin
             if n%2!=0 and n%3!=0 and n%5!=0:
                 candidate = n
                 if isPrime(candidate):
