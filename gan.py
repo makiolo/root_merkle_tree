@@ -174,7 +174,7 @@ checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
                                  generator=generator,
                                  discriminator=discriminator)
 
-EPOCHS = 2
+EPOCHS = 50
 noise_dim = 100
 num_examples_to_generate = 16
 
@@ -199,3 +199,5 @@ with imageio.get_writer(anim_file, mode='I') as writer:
   image = imageio.imread(filename)
   writer.append_data(image)
 
+
+print(f'Generated gif result: {anim_file}')
