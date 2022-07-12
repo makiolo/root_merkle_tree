@@ -123,6 +123,20 @@ double bond_npv(double face_value, double coupon_rate, int maturity, double inte
     return npv;
 }
 
+double invest_npv(double investment, double coupon_rate, int maturity, double interest_rate, int compound_times = 1, Convention convention = Convention::YIELD)
+{
+    double coupon = coupon_rate * investment;
+    auto dfs = get_discount_factors_1_T(maturity, interest_rate, compound_times, convention);
+    double total_df = 0.0;
+    for(const auto& df : dfs)
+    {
+        total_df += df;
+    }
+    auto n = dfs.size();
+    double npv = total_df*(coupon / compound_times) - investment;
+    return npv;
+}
+
 double bond_fv(double coupon, int maturity, double interest_rate, int compound_times = 1, Convention convention = Convention::YIELD)
 {
     double fv = 0.0;
@@ -155,7 +169,20 @@ int main() {
 
     std::cout << coupon_npv(180000, 40, 0.03, 1, Convention::YIELD) / 12.0 << std::endl;
 
-    std::cout << equivalent_rate(0.05, 1, 2) << std::endl;
+    std::cout << zc2df(df2zc(0.95, 3, 4, Convention::YIELD), 3, 4, Convention::YIELD) << std::endl;
+    std::cout << df2zc(zc2df(0.05, 3, 4, Convention::YIELD), 3, 4, Convention::YIELD) << std::endl;
+    std::cout << equivalent_rate(0.05, 4, 1) << std::endl;
+    std::cout << zc2df(0.05, 3, 4, Convention::YIELD) << std::endl;
+    std::cout << zc2df(0.0509453, 3, 1, Convention::YIELD) << std::endl;
+    std::cout << df2zc(0.861509, 3, 4, Convention::YIELD) << std::endl;
+    std::cout << df2zc(0.861509, 3) << std::endl;
+
+    //                      inversion inicial
+    std::cout << invest_npv(10000,
+                          // cuota% y años
+                          0.2, 5,
+                          // free risk rate y tipo de porcentaje
+                          0.02, 1, Convention::YIELD) << std::endl;
 
     return 0;
 }
