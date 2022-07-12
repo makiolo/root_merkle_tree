@@ -11,13 +11,8 @@ enum Convention
 
 double round3(double var)
 {
-    // we use array of chars to store number
-    // as a string.
     char str[10];
-    // Print in string the value of var
-    // with two decimal point
     sprintf(str, "%.3f", var);
-    // scan string value in var
     var = strtof(str, nullptr);
     return var;
 }
@@ -137,6 +132,20 @@ double invest_npv(double investment, double coupon_rate, int maturity, double in
     return npv;
 }
 
+double stock_npv(double investment, double coupon_rate, int maturity, double interest_rate, int compound_times = 1, Convention convention = Convention::YIELD)
+{
+    double coupon = coupon_rate * investment;
+    auto dfs = get_discount_factors_1_T(maturity, interest_rate, compound_times, convention);
+    double total_df = 0.0;
+    for(const auto& df : dfs)
+    {
+        total_df += df;
+    }
+    auto n = dfs.size();
+    double npv = total_df*(coupon / compound_times) - investment + dfs[n - 1] * investment;;
+    return npv;
+}
+
 double bond_fv(double coupon, int maturity, double interest_rate, int compound_times = 1, Convention convention = Convention::YIELD)
 {
     double fv = 0.0;
@@ -171,18 +180,25 @@ int main() {
 
     std::cout << zc2df(df2zc(0.95, 3, 4, Convention::YIELD), 3, 4, Convention::YIELD) << std::endl;
     std::cout << df2zc(zc2df(0.05, 3, 4, Convention::YIELD), 3, 4, Convention::YIELD) << std::endl;
-    std::cout << equivalent_rate(0.05, 4, 1) << std::endl;
+    std::cout << "--> " << equivalent_rate(0.10, 12, 1) << std::endl;
     std::cout << zc2df(0.05, 3, 4, Convention::YIELD) << std::endl;
     std::cout << zc2df(0.0509453, 3, 1, Convention::YIELD) << std::endl;
     std::cout << df2zc(0.861509, 3, 4, Convention::YIELD) << std::endl;
     std::cout << df2zc(0.861509, 3) << std::endl;
 
     //                      inversion inicial
-    std::cout << invest_npv(10000,
+    std::cout << invest_npv(6000,
                           // cuota% y años
-                          0.2, 5,
+                          0.2, 3,
                           // free risk rate y tipo de porcentaje
-                          0.02, 1, Convention::YIELD) << std::endl;
+                          0.08, 1, Convention::YIELD) << std::endl;
+                          
+    //                      inversion inicial en el stock
+    std::cout << stock_npv(10000,
+                          // cuota% y años que venderás
+                          0.2, 10,
+                          // dividendo y tipo de porcentaje
+                          0.03, 1, Convention::YIELD) << std::endl;
 
     return 0;
 }
