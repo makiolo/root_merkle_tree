@@ -26,7 +26,7 @@ double df2zc(double df, double day_count, int compound_times=1, Convention conv 
         case Convention::YIELD:
             return (pow(1.0 / df, 1.0 / (day_count * compound_times)) - 1.0) * compound_times;
         case Convention::EXPONENTIAL:
-            return log(df) / day_count;
+            return -log(df) / day_count;
         default:
             throw std::runtime_error("Invalid convention");
     }
