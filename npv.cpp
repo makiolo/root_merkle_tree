@@ -26,7 +26,7 @@ double df2zc(double df, double day_count, int compound_times=1, Convention conv 
         case Convention::YIELD:
             return (pow(1.0 / df, 1.0 / (day_count * compound_times)) - 1.0) * compound_times;
         case Convention::EXPONENTIAL:
-            return log(df) * (1.0 / day_count);
+            return log(df) / day_count;
         default:
             throw std::runtime_error("Invalid convention");
     }
@@ -178,8 +178,8 @@ int main() {
 
     std::cout << coupon_npv(180000, 40, 0.03, 1, Convention::YIELD) / 12.0 << std::endl;
 
-    std::cout << zc2df(df2zc(0.95, 3, 4, Convention::YIELD), 3, 4, Convention::YIELD) << std::endl;
-    std::cout << df2zc(zc2df(0.05, 3, 4, Convention::YIELD), 3, 4, Convention::YIELD) << std::endl;
+    std::cout << zc2df(df2zc(0.95, 3, 4, Convention::EXPONENTIAL), 3, 4, Convention::EXPONENTIAL) << std::endl;
+    std::cout << df2zc(zc2df(0.05, 3, 4, Convention::EXPONENTIAL), 3, 4, Convention::EXPONENTIAL) << std::endl;
     std::cout << "--> " << equivalent_rate(0.10, 12, 1) << std::endl;
     std::cout << zc2df(0.05, 3, 4, Convention::YIELD) << std::endl;
     std::cout << zc2df(0.0509453, 3, 1, Convention::YIELD) << std::endl;
