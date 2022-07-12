@@ -52,7 +52,7 @@ double equivalent_rate(double rate, int compound_times, int other_compound_times
     return other_compound_times * pow(1.0 + (rate / compound_times), double(compound_times) / other_compound_times) - other_compound_times;
 }
 
-std::vector<double> get_discount_factors_1_T(int years, double r, int compound_times = 1, Convention convention = Convention::YIELD)
+std::vector<double> get_discount_factors_1_T(double years, double r, int compound_times = 1, Convention convention = Convention::YIELD)
 {
     std::vector<double> dfs;
     for(int i=1; i <= years * compound_times; ++i)
@@ -65,7 +65,7 @@ std::vector<double> get_discount_factors_1_T(int years, double r, int compound_t
     return dfs;
 }
 
-std::vector<double> get_discount_factors_0_T_less1(int years, double r, int compound_times = 1, Convention convention = Convention::YIELD)
+std::vector<double> get_discount_factors_0_T_less1(double years, double r, int compound_times = 1, Convention convention = Convention::YIELD)
 {
     std::vector<double> dfs;
     for(int i=0; i < years * compound_times; ++i)
@@ -77,7 +77,7 @@ std::vector<double> get_discount_factors_0_T_less1(int years, double r, int comp
     return dfs;
 }
 
-double annuity_npv(double coupon, int maturity, double interest_rate, int compound_times = 1, Convention convention = Convention::YIELD)
+double annuity_npv(double coupon, double maturity, double interest_rate, int compound_times = 1, Convention convention = Convention::YIELD)
 {
     auto dfs = get_discount_factors_1_T(maturity, interest_rate, compound_times, convention);
     double total_df = 0.0;
@@ -89,7 +89,7 @@ double annuity_npv(double coupon, int maturity, double interest_rate, int compou
     return npv;
 }
 
-double coupon_npv(double npv, int maturity, double interest_rate, int compound_times = 1, Convention convention = Convention::YIELD)
+double coupon_npv(double npv, double maturity, double interest_rate, int compound_times = 1, Convention convention = Convention::YIELD)
 {
     auto dfs = get_discount_factors_1_T(maturity, interest_rate, compound_times, convention);
     double total_df = 0.0;
@@ -104,7 +104,7 @@ double coupon_npv(double npv, int maturity, double interest_rate, int compound_t
 }
 
 // from interest rate (no from discount factor)
-double bond_npv(double face_value, double coupon_rate, int maturity, double interest_rate, int compound_times = 1, Convention convention = Convention::YIELD)
+double bond_npv(double face_value, double coupon_rate, double maturity, double interest_rate, int compound_times = 1, Convention convention = Convention::YIELD)
 {
     double coupon = coupon_rate * face_value;
     auto dfs = get_discount_factors_1_T(maturity, interest_rate, compound_times, convention);
@@ -118,7 +118,7 @@ double bond_npv(double face_value, double coupon_rate, int maturity, double inte
     return npv;
 }
 
-double invest_npv(double investment, double coupon_rate, int maturity, double interest_rate, int compound_times = 1, Convention convention = Convention::YIELD)
+double invest_npv(double investment, double coupon_rate, double maturity, double interest_rate, int compound_times = 1, Convention convention = Convention::YIELD)
 {
     double coupon = coupon_rate * investment;
     auto dfs = get_discount_factors_1_T(maturity, interest_rate, compound_times, convention);
@@ -132,7 +132,7 @@ double invest_npv(double investment, double coupon_rate, int maturity, double in
     return npv;
 }
 
-double stock_npv(double investment, double coupon_rate, int maturity, double interest_rate, int compound_times = 1, Convention convention = Convention::YIELD)
+double stock_npv(double investment, double coupon_rate, double maturity, double interest_rate, int compound_times = 1, Convention convention = Convention::YIELD)
 {
     double coupon = coupon_rate * investment;
     auto dfs = get_discount_factors_1_T(maturity, interest_rate, compound_times, convention);
@@ -146,7 +146,7 @@ double stock_npv(double investment, double coupon_rate, int maturity, double int
     return npv;
 }
 
-double bond_fv(double coupon, int maturity, double interest_rate, int compound_times = 1, Convention convention = Convention::YIELD)
+double bond_fv(double coupon, double maturity, double interest_rate, int compound_times = 1, Convention convention = Convention::YIELD)
 {
     double fv = 0.0;
     auto dfs = get_discount_factors_0_T_less1(maturity, interest_rate, compound_times, convention);
@@ -155,6 +155,24 @@ double bond_fv(double coupon, int maturity, double interest_rate, int compound_t
         fv += (1.0 / df);
     }
     return coupon * fv;
+}
+
+double interest_on_capital(double initial, double final, double maturity, int compound_times = 1, Convention convention = Convention::YIELD)
+{
+    double r = (final - initial) / initial;
+    double df = zc2df(r, 1, 1, Convention::LINEAR);  // 1.0 / (1.0 + zc * day_count);
+    return df2zc(df, maturity, compound_times, convention);  // -log(df) / day_count   etc ...
+}
+
+double cagr(double initial, double final, double maturity)
+{
+    return pow(final / initial, 1.0 / maturity) - 1.0;
+}
+
+double future_value(double initial, double r, double maturity, int compound_times = 1, Convention convention = Convention::YIELD)
+{
+    double df = zc2df(r, maturity, compound_times, convention);
+    return initial / df;
 }
 
 int main() {
@@ -199,6 +217,27 @@ int main() {
                           0.2, 10,
                           // dividendo y tipo de porcentaje
                           0.03, 1, Convention::YIELD) << std::endl;
+                          
+    double initial = 10000;
+    double final = 20000;
+    double past_years = 1;
+    double forward_years = 1;
+    // past info
+    double r = interest_on_capital(initial, final, past_years, 12, Convention::YIELD);
+    std::cout << r * 100.0 << std::endl;
+    // forward prediction
+    std::cout << future_value(final, r, forward_years, 12, Convention::YIELD) << std::endl;
+    
+    // trading
+    initial = 5000;
+    r = 0.10;
+    std::cout << "mensual " << r*100 << std::endl;
+    forward_years = 3.0;
+    std::cout << future_value(initial, r, forward_years, 12, Convention::YIELD) << std::endl;
+    
+    double r2 = equivalent_rate(r, 12, 1);
+    std::cout << "anual " << r2*100 << std::endl;
+    std::cout << future_value(initial, r2, forward_years, 1, Convention::YIELD) << std::endl;
 
     return 0;
 }
