@@ -388,6 +388,6 @@ TEST_CASE("real coupon", "[npv]") {
     double real2_ = stock_real(1000, 0.08, 0.12, maturity, 1, Convention::YIELD);
     REQUIRE(real2_ == Catch::Approx(-1705.8482083442));
 
-    REQUIRE(cagr(1000, (fv - real2), maturity) == Catch::Approx(0.0354767855));
-    REQUIRE(cagr(1000, (fv_ - real2_), maturity) == Catch::Approx(0.0003891982));
+    REQUIRE(cagr(npv, fv, maturity) == Catch::Approx(0.1288369732));
+    REQUIRE(cagr(npv_, fv_, maturity) == Catch::Approx(-0.0249833691));
 }
