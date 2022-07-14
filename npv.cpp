@@ -147,7 +147,7 @@ double bond_npv(double face_value, double coupon, double interest_rate, double m
 // stock investment = coupons + payment on yield-maturity - initial investement
 double stock_npv(double investment, double dividend, double interest_rate, double maturity, int compound_times = 1, Convention convention = Convention::YIELD)
 {
-    double coupon = investment * dividend;
+    double coupon = investment * (dividend - interest_rate);
     double coupons = npv_from_coupon(coupon, interest_rate, maturity, compound_times, convention);
     double yield_on_payment = to_present_value(investment, interest_rate, maturity, compound_times, convention);
     double npv = coupons + yield_on_payment - investment;
@@ -156,7 +156,7 @@ double stock_npv(double investment, double dividend, double interest_rate, doubl
 
 double stock_fv(double investment, double dividend, double interest_rate, double maturity, int compound_times = 1, Convention convention = Convention::YIELD)
 {
-    double coupon = investment * dividend;
+    double coupon = investment * (dividend - interest_rate);
     //double investment_fv = to_future_value(investment, interest_rate, maturity, compound_times, convention);
     double coupons = fv_from_coupon(coupon, interest_rate, maturity, compound_times, convention);
     //double yield_on_payment = to_future_value(investment, interest_rate, maturity, compound_times, convention);
@@ -167,12 +167,12 @@ double stock_fv(double investment, double dividend, double interest_rate, double
 
 double stock_real(double investment, double dividend, double interest_rate, double maturity, int compound_times = 1, Convention convention = Convention::YIELD)
 {
-    double coupon = investment * dividend;
-    //double investment_fv = to_future_value(investment, interest_rate, maturity, compound_times, convention);
+    double coupon = investment * (dividend - interest_rate);
+    double investment_fv = to_future_value(investment, interest_rate, maturity, compound_times, convention);
     double coupons = real_from_coupon(coupon, maturity, compound_times, convention);
     //double yield_on_payment = to_future_value(investment, interest_rate, maturity, compound_times, convention);
     //double npv = coupons + yield_on_payment - investment_fv;
-    double npv = coupons;
+    double npv = investment - coupons - investment_fv;
     return npv;
 }
 
@@ -199,16 +199,23 @@ double coupon_from_fv(double fv, double interest_rate, double maturity, int comp
     return coupon;
 }
 
-double interest_on_capital(double initial, double final, double maturity, int compound_times = 1, Convention convention = Convention::YIELD)
-{
-    double r = (final - initial) / initial;
-    double df = zc2df(r, 1, 1, Convention::LINEAR);  // 1.0 / (1.0 + zc * maturity);
-    return df2zc(df, maturity, compound_times, convention);  // -log(df) / maturity   etc ...
-}
-
 double cagr(double initial, double final, double maturity)
 {
     return pow(final / initial, 1.0 / maturity) - 1.0;
+}
+
+double interest_on_capital(double initial, double final, double maturity, int compound_times = 1, Convention convention = Convention::YIELD)
+{
+    if (compound_times == 1 and convention == Convention::YIELD)
+    {
+        return cagr(initial, final, maturity);
+    }
+    else
+    {
+        double r = (final - initial) / initial;
+        double df = zc2df(r, 1, 1, Convention::LINEAR);  // 1.0 / (1.0 + zc);
+        return df2zc(df, maturity, compound_times, convention);  // -log(df) / maturity   etc ...
+    }
 }
 
 TEST_CASE("bond_npv", "[npv]") {
@@ -354,30 +361,33 @@ TEST_CASE("bond_npv2", "[npv]") {
 TEST_CASE("real coupon", "[npv]") {
 
     double coupon_netflix = 9.9;
-    double maturity = 5;
+    double maturity = 10;
     double real = real_from_coupon(coupon_netflix, maturity, 12, Convention::YIELD);
 
-    REQUIRE(real == Catch::Approx(594.0));
+    REQUIRE(real == Catch::Approx(1188.0));
 
     // dividendo 0.08, precio dinero 0.03
 
     double npv = stock_npv(1000, 0.08, 0.03, maturity, 1, Convention::YIELD);
-    REQUIRE(npv == Catch::Approx(228.9853593597));
+    REQUIRE(npv == Catch::Approx(170.6040567355));
 
     double fv = stock_fv(1000, 0.08, 0.03, maturity, 1, Convention::YIELD);
-    REQUIRE(fv == Catch::Approx(424.7308648));
+    REQUIRE(fv == Catch::Approx(573.1939655735));
 
     double real2 = stock_real(1000, 0.08, 0.03, maturity, 1, Convention::YIELD);
-    REQUIRE(real2 == Catch::Approx(400.0));
+    REQUIRE(real2 == Catch::Approx(-843.9163793441));
 
     // dividendo 0.08, precio dinero 0.12
 
     double npv_ = stock_npv(1000, 0.08, 0.12, maturity, 1, Convention::YIELD);
-    REQUIRE(npv_ == Catch::Approx(-144.1910480938));
+    REQUIRE(npv_ == Catch::Approx(-904.0356845457));
 
     double fv_ = stock_fv(1000, 0.08, 0.12, maturity, 1, Convention::YIELD);
-    REQUIRE(fv_ == Catch::Approx(508.2277888));
+    REQUIRE(fv_ == Catch::Approx(-701.9494027814));
 
     double real2_ = stock_real(1000, 0.08, 0.12, maturity, 1, Convention::YIELD);
-    REQUIRE(real2_ == Catch::Approx(400.0));
+    REQUIRE(real2_ == Catch::Approx(-1705.8482083442));
+
+    REQUIRE(cagr(1000, (fv - real2), maturity) == Catch::Approx(0.0354767855));
+    REQUIRE(cagr(1000, (fv_ - real2_), maturity) == Catch::Approx(0.0003891982));
 }
