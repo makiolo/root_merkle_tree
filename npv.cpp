@@ -12,6 +12,15 @@ enum Convention
     EXPONENTIAL,
 };
 
+/*
+def te_2_tn(te, n=12):
+    return (((1 + te) ** (1.0 / n)) - 1) * n
+
+
+def tn_2_te(tn, n=12):
+    return ((1 + (tn / n)) ** n) - 1
+*/
+
 double fv_from_coupon(double coupon, double interest_rate, double maturity, int compound_times = 1, Convention convention = Convention::YIELD);
 
 double round3(double var)
