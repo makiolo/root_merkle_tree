@@ -12,15 +12,6 @@ enum Convention
     EXPONENTIAL,
 };
 
-/*
-def te_2_tn(te, n=12):
-    return (((1 + te) ** (1.0 / n)) - 1) * n
-
-
-def tn_2_te(tn, n=12):
-    return ((1 + (tn / n)) ** n) - 1
-*/
-
 double fv_from_coupon(double coupon, double interest_rate, double maturity, int compound_times = 1, Convention convention = Convention::YIELD);
 
 double round3(double var)
@@ -64,6 +55,13 @@ double zc2df(double zc, double maturity, int compound_times = 1, Convention conv
 double equivalent_rate(double rate, int compound_times, int other_compound_times = 1)
 {
     return other_compound_times * pow(1.0 + (rate / compound_times), double(compound_times) / other_compound_times) - other_compound_times;
+}
+
+
+double equivalent_rate(double rate, int compound_times, Convention convention = Convention::YIELD, int other_compound_times = 1, Convention other_convention = Convention::YIELD)
+{
+    double df = zc2df(rate, 1, compound_times, convention);
+    return df2zc(df, 1, other_compound_times, other_convention);
 }
 
 std::vector<double> get_discount_factors_1_T(double r, double years, int compound_times = 1, Convention convention = Convention::YIELD)
@@ -210,7 +208,7 @@ double coupon_from_fv(double fv, double interest_rate, double maturity, int comp
     return coupon;
 }
 
-double cagr(double initial, double final, double maturity)
+double cagr(double initial, double final, double maturity = 1.0)
 {
     return pow(final / initial, 1.0 / maturity) - 1.0;
 }
@@ -230,7 +228,7 @@ double interest_on_capital(double initial, double final, double maturity, int co
 }
 
 TEST_CASE("bond_npv", "[npv]") {
-    
+
     // Comparado con: https://mathcracker.com/es/calculadora-valor-bonos#results
     // valor presente de un bono
     // valorar un bono que da un yield "seguro" haciendo otros proyectos risk free
@@ -253,7 +251,7 @@ TEST_CASE("fv_from_coupon", "[npv]") {
     double fv1 = to_future_value(initial, r, maturity, 1, Convention::YIELD);
     double aportado1 = initial;
     double presente1 = to_present_value(initial, r, 0, 1, Convention::YIELD);
-    
+
     REQUIRE(aportado1 == Catch::Approx(10000));
     REQUIRE(presente1 == Catch::Approx(10000));
     REQUIRE(fv1 == Catch::Approx(17181.8617983192));
@@ -304,7 +302,7 @@ TEST_CASE("cagr_interest", "[npv]") {
     double forward_years = 2;
     // past info
     double r = interest_on_capital(initial, final, past_years, 1, Convention::YIELD);
-    REQUIRE(r*100 == Catch::Approx(38.1698559416));
+    REQUIRE(r * 100 == Catch::Approx(38.1698559416));
 
     r = cagr(initial, final, past_years);
     REQUIRE(r * 100 == Catch::Approx(38.1698559416));
@@ -318,7 +316,7 @@ TEST_CASE("cagr_interest", "[npv]") {
     double r_anual = equivalent_rate(r, 12, 1);
     double years = 3.0;
     REQUIRE(to_future_value(initial, r, years, 12, Convention::YIELD) == \
-            Catch::Approx(to_future_value(initial, r_anual, years, 1, Convention::YIELD)));
+        Catch::Approx(to_future_value(initial, r_anual, years, 1, Convention::YIELD)));
 }
 
 TEST_CASE("df & zc", "[npv]") {
@@ -401,4 +399,71 @@ TEST_CASE("real coupon", "[npv]") {
 
     REQUIRE(interest_on_capital(npv, fv, maturity, 1, Convention::EXPONENTIAL) == Catch::Approx(0.1211878754));
     REQUIRE(interest_on_capital(npv_, fv_, maturity, 1, Convention::EXPONENTIAL) == Catch::Approx(-0.0253007508));
+}
+
+TEST_CASE("tn & te", "[npv]")
+{
+    double a = 0.05 / 12;
+    // TASA NOMINAL a TASA EFECTIVA
+    double b = equivalent_rate(0.05, 12, 1) / 12;
+    // TASA EFECTIVA A TASA NOMINAL
+    double c = equivalent_rate(0.05, 1, 12) / 12;
+
+    double c1 = 1000 * a;
+    double c2 = 1000 * b;
+    double c3 = 1000 * c;
+
+    REQUIRE(c1 == Catch::Approx(4.1666666667));
+    REQUIRE(c2 == Catch::Approx(4.2634914901));
+    REQUIRE(c3 == Catch::Approx(4.0741237836));
+
+    // 5% reinvirtiendo 1 vez al añao
+    REQUIRE(cagr(1000, 1000 + (c1 * 12)) == Catch::Approx(0.05));
+    // 5% reinvirtiendo 12 veces equivalen a 5.1161% reinvirtiendo 1
+    REQUIRE(cagr(1000, 1000 + (c2 * 12)) == Catch::Approx(0.0511618979));
+    // 5% reinvirtiendo 1 vez equivalen a 4.888% reinvirtiendo 12
+    REQUIRE(cagr(1000, 1000 + (c3 * 12)) == Catch::Approx(0.0488894854));
+
+    //REQUIRE(tn_2_te(0.05, 12) == Catch::Approx(0.0511618979));
+    REQUIRE(equivalent_rate(0.05, 12, 1) == Catch::Approx(0.0511618979));
+
+    //REQUIRE(te_2_tn(0.05, 12) == Catch::Approx(0.0488894854));
+    REQUIRE(equivalent_rate(0.05, 1, 12) == Catch::Approx(0.0488894854));
+    
+    REQUIRE(equivalent_rate(0.0488894854, 12, 1) == Catch::Approx(0.05));
+    REQUIRE(equivalent_rate(0.0511618979, 1, 12) == Catch::Approx(0.05));
+
+    REQUIRE(equivalent_rate(0.01, 365, 1) == Catch::Approx(0.0100500287));
+    REQUIRE(equivalent_rate(0.01, 1, 365) == Catch::Approx(0.0099504665));
+
+    /*
+    10% mensual con reinversion mensual
+    */
+    double  fv = to_future_value(1000, 0.10 * 12, 1, 12, Convention::YIELD);
+    REQUIRE(fv == Catch::Approx(3138.428376721));
+    REQUIRE(cagr(1000, fv) == Catch::Approx(equivalent_rate(0.10 * 12, 12, 1)));
+
+    /*
+    10% mensual con reinversion anual = 120%
+    */
+    double  fv2 = to_future_value(1000, 0.10 * 12, 1, 1, Convention::YIELD);
+    REQUIRE(fv2 == Catch::Approx(2200.0));
+    REQUIRE(cagr(1000, fv2) == Catch::Approx(equivalent_rate(0.10 * 12, 1, 1)));
+
+    /*
+    2% semanal con reinversion semanal = 191.34%
+    */
+    double  fv3 = to_future_value(1000, 0.02 * 54, 1, 54, Convention::YIELD);
+    REQUIRE(fv3 == Catch::Approx(2913.4614441403));
+    REQUIRE(cagr(1000, fv3) == Catch::Approx(equivalent_rate(0.02 * 54, 54, 1)));
+
+    /*
+    2% semanal con reinversion continua = 194.46%
+    */
+    double  fv4 = to_future_value(1000, 0.02 * 54, 1, 1, Convention::EXPONENTIAL);
+    REQUIRE(fv4 == Catch::Approx(2944.6795510655));
+    // ¿Como calcular ese CAGR?
+    REQUIRE(cagr(1000, fv4) == Catch::Approx(equivalent_rate(0.02 * 54, 1, Convention::EXPONENTIAL, 1, Convention::YIELD)));
+
+    REQUIRE(equivalent_rate(0.05, 1, 12) == equivalent_rate(0.05, 1, Convention::YIELD, 12, Convention::YIELD));
 }
