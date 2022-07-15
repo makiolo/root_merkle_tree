@@ -52,16 +52,16 @@ double zc2df(double zc, double maturity, int compound_times = 1, Convention conv
     }
 }
 
-double equivalent_rate(double rate, int compound_times, int other_compound_times = 1)
-{
-    return other_compound_times * pow(1.0 + (rate / compound_times), double(compound_times) / other_compound_times) - other_compound_times;
-}
-
-
 double equivalent_rate(double rate, int compound_times, Convention convention = Convention::YIELD, int other_compound_times = 1, Convention other_convention = Convention::YIELD)
 {
     double df = zc2df(rate, 1, compound_times, convention);
     return df2zc(df, 1, other_compound_times, other_convention);
+}
+
+double equivalent_rate(double rate, int compound_times, int other_compound_times = 1)
+{
+    //return other_compound_times * pow(1.0 + (rate / compound_times), double(compound_times) / other_compound_times) - other_compound_times;
+    return equivalent_rate(rate, compound_times, Convention::YIELD, other_compound_times, Convention::YIELD);
 }
 
 std::vector<double> get_discount_factors_1_T(double r, double years, int compound_times = 1, Convention convention = Convention::YIELD)
