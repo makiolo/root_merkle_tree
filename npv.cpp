@@ -117,12 +117,24 @@ double coupon_from_real(double real, double maturity, int compound_times = 1, Co
 double npv_from_coupon(double coupon, double interest_rate, double maturity, int compound_times = 1, Convention convention = Convention::YIELD)
 {
     auto dfs = get_discount_factors_1_T(interest_rate, maturity, compound_times, convention);
-    double total_df = 0.0;
+    double npv = 0.0;
     for (const auto& df : dfs)
     {
-        total_df += df;
+        npv += df * (coupon / compound_times);
     }
-    double npv = total_df * (coupon / compound_times);
+    return npv;
+}
+
+double npv_from_growth_coupon(double coupon, double g, double interest_rate, double maturity, int compound_times = 1, Convention convention = Convention::YIELD, int g_compound_times = 1, Convention g_convention = Convention::YIELD)
+{
+    auto dfs = get_discount_factors_1_T(interest_rate, maturity, compound_times, convention);
+    double npv = 0.0;
+    double i = 0.0;
+    for (const auto& df : dfs)
+    {
+        npv += (df * (coupon / compound_times)) / zc2df(g, i, g_compound_times, g_convention);
+        i += 1.0;
+    }
     return npv;
 }
 
@@ -148,8 +160,8 @@ double classic_npv(double investment, double coupon, double interest_rate, doubl
 // coupons + payment on yield-maturity
 double bond_npv(double face_value, double coupon, double interest_rate, double maturity, int compound_times = 1, Convention convention = Convention::YIELD)
 {
-    double yield_on_payment = to_present_value(face_value, interest_rate, maturity, compound_times, convention);
     double coupons = npv_from_coupon(coupon, interest_rate, maturity, compound_times, convention);
+    double yield_on_payment = to_present_value(face_value, interest_rate, maturity, compound_times, convention);
     return coupons + yield_on_payment;
 }
 
@@ -195,6 +207,21 @@ double fv_from_coupon(double coupon, double interest_rate, double maturity, int 
     }
     return coupon * total_df;
 }
+
+/*
+double fv_from_growth_coupon(double coupon, double g, double interest_rate, double maturity, int compound_times = 1, Convention convention = Convention::YIELD, int g_compound_times = 1, Convention g_convention = Convention::YIELD)
+{
+    auto dfs = get_discount_factors_1_T(interest_rate, maturity, compound_times, convention);
+    double npv = 0.0;
+    double i = 0.0;
+    for (const auto& df : dfs)
+    {
+        npv += ((1.0 / df) * (coupon / compound_times)) / zc2df(g, i, g_compound_times, g_convention);
+        i += 1.0;
+    }
+    return npv;
+}
+*/
 
 double coupon_from_fv(double fv, double interest_rate, double maturity, int compound_times = 1, Convention convention = Convention::YIELD)
 {
@@ -466,4 +493,19 @@ TEST_CASE("tn & te", "[npv]")
     REQUIRE(cagr(1000, fv4) == Catch::Approx(equivalent_rate(0.02 * 54, 1, Convention::EXPONENTIAL, 1, Convention::YIELD)));
 
     REQUIRE(equivalent_rate(0.05, 1, 12) == equivalent_rate(0.05, 1, Convention::YIELD, 12, Convention::YIELD));
+}
+
+TEST_CASE("coupon growth", "[npv]")
+{
+    // el dividendo no crece
+    double npv1 = npv_from_coupon(1000, 0.08, 5, 1, Convention::YIELD);
+    REQUIRE(npv1 == Catch::Approx(3992.7100370781));
+
+    // reinvertir anualmente
+    double npv2 = npv_from_growth_coupon(1000, 0.05, 0.08, 5, 1, Convention::YIELD);
+    REQUIRE(npv2 == Catch::Approx(4379.4737959505));
+
+    // reinvertir mensualmente
+    double npv3 = npv_from_growth_coupon(1000, 0.05, 0.08, 5, 1, Convention::YIELD, 12, Convention::YIELD);
+    REQUIRE(npv3 == Catch::Approx(4388.9035111952));
 }
