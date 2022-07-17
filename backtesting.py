@@ -13,3 +13,6 @@
 
 # https://gist.github.com/Financioneroncios/38cef9d2f2f789b281e884e8b33f66a3
 # https://gist.github.com/Financioneroncios?page=2
+
+# Explciaciópn monetarismo y causs infalcción
+# https://www.youtube.com/watch?v=857RaEq5H-E
