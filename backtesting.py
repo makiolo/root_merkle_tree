@@ -16,3 +16,6 @@
 
 # Explciaciópn monetarismo y causs infalcción
 # https://www.youtube.com/watch?v=857RaEq5H-E
+
+# quantlib
+# https://quantlib-python-docs.readthedocs.io/en/latest/cashflows.html#interest-rates
