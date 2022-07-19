@@ -19,3 +19,6 @@
 
 # quantlib
 # https://quantlib-python-docs.readthedocs.io/en/latest/cashflows.html#interest-rates
+
+# metodos de valoración
+# https://www.financlick.es/metodos-de-valoracion-de-empresas-n-89-es
