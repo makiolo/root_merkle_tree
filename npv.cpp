@@ -28,6 +28,14 @@ enum Frequency
     MONTHLY = 12,
 };
 
+enum DayCountConvention
+{
+    ACT_ACT,
+    ACT_360,
+    ACT_365,
+    EQUALS,
+};
+
 // convert df and zc
 double df2zc(double df, double maturity, Convention conv = Convention::YIELD, int compound_times = Frequency::ANNUAL);
 double zc2df(double zc, double maturity, Convention conv = Convention::YIELD, int compound_times = Frequency::ANNUAL);
@@ -72,11 +80,75 @@ double stock_real(double investment, double dividend, double interest_rate, doub
 // calcular r
 InterestRate on_capital(double initial, double final, double maturity = 1.0, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
 
+
+struct Maturity
+{
+    date::year_month_day pillar;
+    double value;
+};
+
+struct Calendar
+{
+    date::year_month_day& start_date;
+    date::year_month_day& end_date;
+    int tenor;
+    DayCountConvention dc_convention;
+};
+
+std::vector<Maturity> generate_pay_calendar(const Calendar& cal, bool begin_mode = true)
+{
+    using namespace date;
+    std::vector<Maturity> data;
+    auto d = cal.start_date;
+    int i = 0;
+    if (!begin_mode)
+    {
+        d += months(cal.tenor);
+        i++;
+    }
+    while ((begin_mode && (d < cal.end_date)) || (!begin_mode && (d <= cal.end_date)))
+    {
+        // ACT/ACT
+        double actual;
+        switch (cal.dc_convention)
+        {
+        case DayCountConvention::ACT_ACT:
+            actual = double((sys_days{ dec / day(31) / d.year() } - sys_days{ jan / day(1) / d.year() }).count());
+            break;
+        case DayCountConvention::ACT_365:
+            actual = 365.0;
+            break;
+        case DayCountConvention::EQUALS:
+            actual = double(i) / (12.0 / cal.tenor);
+            break;
+        case DayCountConvention::ACT_360:
+        default:
+            actual = 360.0;
+            break;
+        }
+
+        if (cal.dc_convention != DayCountConvention::EQUALS)
+        {
+            double maturity = double((sys_days{ d } - sys_days{ cal.start_date }).count()) / actual;
+            data.emplace_back(Maturity{ d, maturity });
+        }
+        else
+        {
+            data.emplace_back(Maturity{ d, actual });
+        }
+
+        // TODO: use switch tenor
+        d += months(cal.tenor);
+        i += 1;
+    }
+    return data;
+}
+
 class DiscountFactor
 {
 public:
     explicit DiscountFactor(double df_)
-            : df(df_)
+        : df(df_)
     {
 
     }
@@ -100,9 +172,9 @@ class InterestRate
 {
 public:
     explicit InterestRate(double interest_rate_, Convention convention_ = Convention::YIELD, int compound_times_ = 1)
-            : r(interest_rate_)
-            , conv(convention_)
-            , c(compound_times_)
+        : r(interest_rate_)
+        , conv(convention_)
+        , c(compound_times_)
     {
 
     }
@@ -124,28 +196,38 @@ public:
     bool operator==(const InterestRate& rhs) const
     {
         return  r == rhs.r &&
-                c == rhs.c &&
-                conv == rhs.conv;
+            c == rhs.c &&
+            conv == rhs.conv;
     }
 
-    [[nodiscard]] std::vector<DiscountFactor> get_discount_factors_to_0(double years) const
+    [[nodiscard]] std::vector<DiscountFactor> get_discount_factors_to_0(const Calendar& cal) const
     {
         std::vector<DiscountFactor> dfs;
-        for (int i = 1; i <= years * c; ++i)
+        // for (int i = 1; i <= years * c; ++i)
+
+        for (auto& maturity : generate_pay_calendar(cal, false))
         {
-            dfs.push_back(to_discount_factor(double(i) / c));
+            // dfs.push_back(to_discount_factor(double(i) / c));
+            dfs.push_back(to_discount_factor(maturity));
         }
         return dfs;
     }
 
-    [[nodiscard]] std::vector<DiscountFactor> get_discount_factors_to_T(double years) const
+    [[nodiscard]] std::vector<DiscountFactor> get_discount_factors_to_T(const Calendar& cal) const
     {
         std::vector<DiscountFactor> dfs;
-        for (int i = 0; i < years * c; ++i)
+        // for (int i = 0; i < years * c; ++i)
+        for (auto& maturity : generate_pay_calendar(cal, true))
         {
-            dfs.push_back(to_discount_factor(double(i) / c));
+            // dfs.push_back(to_discount_factor(double(i) / c));
+            dfs.push_back(to_discount_factor(maturity));
         }
         return dfs;
+    }
+
+    [[nodiscard]] DiscountFactor to_discount_factor(const Maturity& maturity) const
+    {
+        return DiscountFactor(zc2df(r, maturity.value, conv, c));
     }
 
     [[nodiscard]] DiscountFactor to_discount_factor(double maturity) const
@@ -164,13 +246,14 @@ public:
     Convention conv;  // convention
 };
 
+
 // TODO:
 class CashFlow
 {
 public:
     explicit CashFlow(double maturity_, double cash_)
-            : maturity(maturity_)
-            , cash(cash_)
+        : maturity(maturity_)
+        , cash(cash_)
     {
 
     }
@@ -185,8 +268,8 @@ class Coupon
 {
 public:
     explicit Coupon(double years_, double cash_)
-            : years(years_)
-            , cash(cash_)
+        : years(years_)
+        , cash(cash_)
     {
 
     }
@@ -225,14 +308,14 @@ double df2zc(double df, double maturity, Convention conv, int compound_times)
 {
     switch (conv)
     {
-        case Convention::LINEAR:
-            return (1.0 / df - 1.0) * (1.0 / maturity);
-        case Convention::YIELD:
-            return (pow(1.0 / df, 1.0 / (maturity * compound_times)) - 1.0) * compound_times;
-        case Convention::EXPONENTIAL:
-            return -log(df) / maturity;
-        default:
-            throw std::runtime_error("Invalid convention");
+    case Convention::LINEAR:
+        return (1.0 / df - 1.0) * (1.0 / maturity);
+    case Convention::YIELD:
+        return (pow(1.0 / df, 1.0 / (maturity * compound_times)) - 1.0) * compound_times;
+    case Convention::EXPONENTIAL:
+        return -log(df) / maturity;
+    default:
+        throw std::runtime_error("Invalid convention");
     }
 }
 
@@ -240,14 +323,14 @@ double zc2df(double zc, double maturity, Convention conv, int compound_times)
 {
     switch (conv)
     {
-        case Convention::LINEAR:
-            return 1.0 / (1.0 + zc * maturity);
-        case Convention::YIELD:
-            return 1.0 / (pow((1.0 + zc / compound_times), maturity * compound_times));
-        case Convention::EXPONENTIAL:
-            return exp(-zc * maturity);
-        default:
-            throw std::runtime_error("Invalid convention");
+    case Convention::LINEAR:
+        return 1.0 / (1.0 + zc * maturity);
+    case Convention::YIELD:
+        return 1.0 / (pow((1.0 + zc / compound_times), maturity * compound_times));
+    case Convention::EXPONENTIAL:
+        return exp(-zc * maturity);
+    default:
+        throw std::runtime_error("Invalid convention");
     }
 }
 
@@ -312,8 +395,8 @@ double compute_irr(const std::vector<double>& cf, Convention convention, int com
 InterestRate equivalent_rate(double rate, Convention convention, int compound_times, Convention other_convention, int other_compound_times)
 {
     return InterestRate(rate, convention, compound_times)
-            .to_discount_factor(1.0)
-            .to_interest_rate(1.0, other_convention, other_compound_times);
+        .to_discount_factor(1.0)
+        .to_interest_rate(1.0, other_convention, other_compound_times);
 }
 
 InterestRate equivalent_rate(double rate, int compound_times, int other_compound_times)
@@ -321,16 +404,16 @@ InterestRate equivalent_rate(double rate, int compound_times, int other_compound
     return equivalent_rate(rate, Convention::YIELD, compound_times, Convention::YIELD, other_compound_times);
 }
 
-std::vector<DiscountFactor> get_discount_factors_1_T(double r, double years, Convention convention, int compound_times)
+std::vector<DiscountFactor> get_discount_factors_1_T(double r, const Calendar& cal, Convention convention, int compound_times)
 {
     InterestRate ir(r, convention, compound_times);
-    return ir.get_discount_factors_to_0(years);
+    return ir.get_discount_factors_to_0(cal);
 }
 
-std::vector<DiscountFactor> get_discount_factors_0_T_less1(double r, double years, Convention convention, int compound_times)
+std::vector<DiscountFactor> get_discount_factors_0_T_less1(double r, const Calendar& cal, Convention convention, int compound_times)
 {
     InterestRate ir(r, convention, compound_times);
-    return ir.get_discount_factors_to_T(years);
+    return ir.get_discount_factors_to_T(cal);
 }
 
 // tenemos un cash en "maturity" y nos lo traemos a presente
@@ -363,7 +446,11 @@ double npv_from_coupon(double coupon, const InterestRate& interest_rate, double 
 
 double npv_from_growth_coupon(double coupon, double g, double interest_rate, double maturity, Convention convention, int compound_times, Convention g_convention, int g_compound_times)
 {
-    auto dfs = get_discount_factors_1_T(interest_rate, maturity, convention, compound_times);
+    auto start_date = date::year(2012) / 1 / 1;
+    auto end_date = date::year(2012 + maturity) / 1 / 1;
+    int tenor = int(12.0 / compound_times);
+    Calendar cal{start_date, end_date, tenor, DayCountConvention::EQUALS};
+    auto dfs = get_discount_factors_1_T(interest_rate, cal, convention, compound_times);
     double npv = 0.0;
     double i = 0.0;
     for (const auto& df : dfs)
@@ -387,7 +474,12 @@ double fv_from_coupon(double coupon, double interest_rate, double maturity, Conv
 
 double coupon_from_npv(double npv, double interest_rate, double maturity, Convention convention, int compound_times)
 {
-    auto dfs = get_discount_factors_1_T(interest_rate, maturity, convention, compound_times);
+    using namespace date;
+    auto start_date = 2012_y / 1 / 1;
+    auto end_date = year(2012 + maturity) / 1 / 1;
+    int tenor = int(12.0 / compound_times);
+    Calendar cal{ start_date, end_date, tenor, DayCountConvention::EQUALS };
+    auto dfs = get_discount_factors_1_T(interest_rate, cal, convention, compound_times);
     double total_df = 0.0;
     for (const auto& df : dfs)
     {
@@ -447,7 +539,12 @@ double coupon_from_growth_coupon(double coupon, double g, double interest_rate, 
 
 double coupon_from_fv(double fv, double interest_rate, double maturity, Convention convention, int compound_times)
 {
-    auto dfs = get_discount_factors_0_T_less1(interest_rate, maturity, convention, compound_times);
+    using namespace date;
+    auto start_date = 2012_y / 1 / 1;
+    auto end_date = year(2012 + maturity) / 1 / 1;
+    int tenor = int(12.0 / compound_times);
+    Calendar cal{ start_date, end_date, tenor, DayCountConvention::EQUALS };
+    auto dfs = get_discount_factors_0_T_less1(interest_rate, cal, convention, compound_times);
     double total_df = 0.0;
     for (const auto& df : dfs)
     {
@@ -458,7 +555,7 @@ double coupon_from_fv(double fv, double interest_rate, double maturity, Conventi
 
 InterestRate on_capital(double initial, double final, double maturity, Convention convention, int compound_times)
 {
-    if(convention == Convention::YIELD && compound_times == Frequency::ANNUAL)
+    if (convention == Convention::YIELD && compound_times == Frequency::ANNUAL)
     {
         // cagr
         return InterestRate(pow(final / initial, 1.0 / maturity) - 1.0);
@@ -466,8 +563,8 @@ InterestRate on_capital(double initial, double final, double maturity, Conventio
     else
     {
         return InterestRate((final - initial) / initial, Convention::LINEAR)
-                .to_discount_factor(1.0)
-                .to_interest_rate(maturity, convention, compound_times);
+            .to_discount_factor(1.0)
+            .to_interest_rate(maturity, convention, compound_times);
     }
 }
 
@@ -477,10 +574,10 @@ TEST_CASE("bond_npv", "[fv]") {
     // valor presente de un bono
     // valorar un bono que da un yield "seguro" haciendo otros proyectos risk free
     double npv = bond_npv(16000,
-            // inversion "segura" ofrecida por el bono
-                          100, 0.06,
-            // inversion libre de riesgo en el mercado
-                          20);
+        // inversion "segura" ofrecida por el bono
+        100, 0.06,
+        // inversion libre de riesgo en el mercado
+        20);
 
     REQUIRE(npv == Catch::Approx(6135.87));
 }
@@ -622,19 +719,19 @@ TEST_CASE("bond_npv2", "[fv]") {
     REQUIRE(coupon_from_npv(npv, r, maturity, Convention::YIELD) == Catch::Approx(5000));
 
     REQUIRE(classic_npv(
-            // inversion
-            6000,
-            // cuota
-            500,
-            // free risk rate
-            InterestRate(0.01),
-            // years
-            1) == Catch::Approx(-5504.9504950495));
+        // inversion
+        6000,
+        // cuota
+        500,
+        // free risk rate
+        InterestRate(0.01),
+        // years
+        1) == Catch::Approx(-5504.9504950495));
 
     double npv1 = classic_npv(1000, 100, InterestRate(-0.1940185202), 6);
     REQUIRE(npv1 == Catch::Approx(364.7956282082));
 
-    std::vector<double> cf = {-1000, 100, 100, 100, 100, 100};
+    std::vector<double> cf = { -1000, 100, 100, 100, 100, 100 };
     double irr = compute_irr(cf);
     REQUIRE(irr == Catch::Approx(-0.1940185202));
 }
@@ -796,22 +893,34 @@ TEST_CASE("coupon growth2", "[fv]")
 TEST_CASE("date C++20", "[date]")
 {
     using namespace date;
-    auto x = 2012_y/1/24;
-    auto y = 2013_y/1/8;
-    auto diff = (sys_days{y} - sys_days{x}).count();
+    auto x = 2012_y / 1 / 24;
+    auto y = 2013_y / 1 / 8;
+    auto diff = (sys_days{ y } - sys_days{ x }).count();
     REQUIRE(diff == Catch::Approx(350));
 
-    auto start_date = jan/day(1)/2020;
-    auto end_date = dec/day(31)/2030;
+    auto start_date = jan / day(1) / 2020;
+    auto end_date = jan / day(1) / 2030;
     double last_maturity;
-    for (auto d = start_date; d <= end_date; d += months(1))
+    for (auto d = start_date; d < end_date; d += months(1))
     {
         // ACT/ACT
-        int actual = (sys_days{dec/day(31)/d.year()} - sys_days{jan/day(1)/d.year()}).count();
-        double maturity = double((sys_days{d} - sys_days{start_date}).count()) / double(actual);
+        int actual = (sys_days{ dec / day(31) / d.year() } - sys_days{ jan / day(1) / d.year() }).count();
+        double maturity = double((sys_days{ d } - sys_days{ start_date }).count()) / double(actual);
         std::cout << maturity << std::endl;
         std::cout << d << ": " << to_present_value(1000, InterestRate(0.05), maturity) << std::endl;
         last_maturity = maturity;
     }
-    REQUIRE(last_maturity == Catch::Approx(10.9532967033));
+    REQUIRE(last_maturity == Catch::Approx(9.9505494505));
+    
+    Calendar cal{start_date, end_date, 1, DayCountConvention::EQUALS};
+
+    for (auto& maturity : generate_pay_calendar(cal, true))
+    {
+        std::cout << "pillar: " << maturity.pillar << " - value: " << maturity.value << std::endl;
+    }
+    int c = 12;
+    for (int i = 0; i < 10 * c; ++i)
+    {
+        std::cout << "value: " << double(i) / c << std::endl;
+    }
 }
