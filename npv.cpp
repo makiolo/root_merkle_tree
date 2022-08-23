@@ -12,6 +12,9 @@
 
 class InterestRate;
 class DiscountFactor;
+class Maturity;
+class Calendar;
+class InterestRate;
 
 enum Convention
 {
@@ -39,29 +42,25 @@ enum DayCountConvention
 // convert df and zc
 double df2zc(double df, double maturity, Convention conv = Convention::YIELD, int compound_times = Frequency::ANNUAL);
 double zc2df(double zc, double maturity, Convention conv = Convention::YIELD, int compound_times = Frequency::ANNUAL);
-InterestRate equivalent_rate(double rate, Convention conv, int compound_times = Convention::YIELD, Convention other_convention = Convention::YIELD, int other_compound_times = Frequency::ANNUAL);
+InterestRate equivalent_rate(double rate, Convention conv, int compound_times, Convention other_convention = Convention::YIELD, int other_compound_times = Frequency::ANNUAL);
 InterestRate equivalent_rate(double rate, int compound_times, int other_compound_times = Frequency::ANNUAL);
-std::vector<DiscountFactor> get_discount_factors_1_T(double r, double years, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
-std::vector<DiscountFactor> get_discount_factors_0_T_less1(double r, double years, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
 
 // one cash flow
-double to_present_value(double cash, const InterestRate& r, double maturity);
-double to_future_value(double cash, const InterestRate& r, double maturity);
-
-// real
-double real_from_coupon(double coupon, double maturity, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
-double coupon_from_real(double real, double maturity, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
+double to_present_value(double cash, const InterestRate& r, const Maturity& maturity);
+double to_future_value(double cash, const InterestRate& r, const Maturity& maturity);
+double to_present_value(double cash, const InterestRate& r, const Calendar& cal);
+double to_future_value(double cash, const InterestRate& r, const Calendar& cal);
 
 // fv - coupon - fv
-double npv_from_coupon(double coupon, const InterestRate& interest_rate, double years);
-double coupon_from_npv(double npv, double interest_rate, double maturity, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
-double coupon_from_fv(double fv, double interest_rate, double maturity, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
-double fv_from_coupon(double coupon, double interest_rate, double maturity, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
+double npv_from_coupon(double coupon, const InterestRate& interest_rate, const Calendar& cal);
+double coupon_from_npv(double npv, const InterestRate& interest_rate, const Calendar& cal);
+double coupon_from_fv(double fv, const InterestRate& interest_rate, const Calendar& cal);
+double fv_from_coupon(double coupon, const InterestRate& interest_rate, const Calendar& cal);
 
 // growth_coupon
-double npv_from_growth_coupon(double coupon, double g, double interest_rate, double maturity, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL, Convention g_convention = Convention::YIELD, int g_compound_times = Frequency::ANNUAL);
-double fv_from_growth_coupon(double coupon, double g, double interest_rate, double maturity, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL, Convention g_convention = Convention::YIELD, int g_compound_times = Frequency::ANNUAL);
-double coupon_from_growth_coupon(double coupon, double g, double interest_rate, double maturity, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL, Convention g_convention = Convention::YIELD, int g_compound_times = Frequency::ANNUAL);
+double npv_from_growth_coupon(double coupon, const InterestRate& growth_rate, const InterestRate& interest_rate, const Calendar& cal);
+double fv_from_growth_coupon(double coupon, const InterestRate& growth_rate, const InterestRate& interest_rate, const Calendar& cal);
+double coupon_from_growth_coupon(double coupon, const InterestRate& growth_rate, const InterestRate& interest_rate, const Calendar& cal);
 
 /*
 growth_coupon_from_npv
@@ -71,78 +70,137 @@ grouth_coupon_from_fv
 double compute_irr(const std::vector<double>& cf, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
 
 // value products
-double classic_npv(double investment, double coupon, const InterestRate& interest_rate, double maturity);
-double bond_npv(double face_value, double coupon, double interest_rate, double maturity, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
-double stock_npv(double investment, double dividend, double interest_rate, double maturity, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
-double stock_fv(double investment, double dividend, double interest_rate, double maturity, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
-double stock_real(double investment, double dividend, double interest_rate, double maturity, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
+double classic_npv(double investment, double coupon, const InterestRate& interest_rate, const Calendar& cal);
+double bond_npv(double face_value, double coupon, const InterestRate& interest_rate, const Calendar& cal);
+double stock_npv(double investment, double dividend, const InterestRate& interest_rate, const Calendar& cal);
+double stock_fv(double investment, double dividend, const InterestRate& interest_rate, const Calendar& cal);
 
 // calcular r
-InterestRate on_capital(double initial, double final, double maturity = 1.0, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
+InterestRate on_capital(double initial, double final_value, double maturity = 1.0, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
 
 
 struct Maturity
 {
+    Maturity(double value_)
+        : value(value_)
+    {
+        
+    }
+
+    explicit Maturity(const date::year_month_day& pillar_, double value_)
+        : pillar(pillar_)
+        , value(value_)
+    {
+
+    }
+
+    double forward(double cash, const InterestRate& interest_rate, const Maturity& other)
+    {
+        double df0 = 1.0 / to_future_value(cash, interest_rate, *this);
+        double df1 = 1.0 / to_future_value(cash, interest_rate, other);
+
+        // double df0 = interest_rate.to_discount_factor(*this).df;
+        // double df1 = interest_rate.to_discount_factor(other).df;
+
+        return df1 / df0;
+    }
+
+    double forward_rate(double cash, const InterestRate& interest_rate, const Maturity& other)
+    {
+        double df0 = 1.0 / to_future_value(cash, interest_rate, *this);
+        double df1 = 1.0 / to_future_value(cash, interest_rate, other);
+
+        // double df0 = interest_rate.to_discount_factor(*this).df;
+        // double df1 = interest_rate.to_discount_factor(other).df;
+
+        double m = other.value - value;
+
+        return (df0 / df1 - 1.0) / m;
+    }
+
+    double next_discount(double discount, double forward_rate, const Maturity& other)
+    {
+        double m = other.value - value;
+
+        return discount / (1.0 + (other.value - value) * forward_rate);
+    }
+
     date::year_month_day pillar;
     double value;
 };
 
 struct Calendar
 {
-    date::year_month_day& start_date;
-    date::year_month_day& end_date;
+    date::year_month_day start_date;
+    date::year_month_day end_date;
     int tenor;
     DayCountConvention dc_convention;
+
+    Calendar(const date::year_month_day& start_date_, const date::year_month_day& end_date_, int tenor_ = 12, DayCountConvention dc_convention_ = DayCountConvention::EQUALS)
+        : start_date(start_date_)
+        , end_date(end_date_)
+        , tenor(tenor_)
+        , dc_convention(dc_convention_)
+    {
+        
+    }
+
+    Calendar(const date::year_month_day& start_date_, int duration, int tenor_ = 12, DayCountConvention dc_convention_ = DayCountConvention::EQUALS)
+        : start_date(start_date_)
+        , end_date(start_date_ + date::years(duration))
+        , tenor(tenor_)
+        , dc_convention(dc_convention_)
+    {
+
+    }
+
+    std::vector<Maturity> generate(bool begin_mode = true) const
+    {
+        using namespace date;
+
+        std::vector<Maturity> data;
+        auto pillar_day = start_date;
+        int i = 0;
+        if (!begin_mode)
+        {
+            pillar_day += months(tenor);
+            i++;
+        }
+        while ((begin_mode && (pillar_day < end_date)) || (!begin_mode && (pillar_day <= end_date)))
+        {
+            double count;
+            switch (dc_convention)
+            {
+                case DayCountConvention::ACT_ACT:
+                {
+                    double m = double((sys_days{ jan / day(1) / (pillar_day.year() + years(1)) } - sys_days{ jan / day(1) / pillar_day.year() }).count());
+                    count = double((sys_days{ pillar_day } - sys_days{ start_date }).count()) / m;
+                    break;
+                }
+                case DayCountConvention::ACT_365:
+                {
+                    count = double((sys_days{ pillar_day } - sys_days{ start_date }).count()) / 365.0;
+                    break;
+                }
+                case DayCountConvention::EQUALS:
+                {
+                    count = double(i) / (12.0 / tenor);
+                    break;
+                }
+                case DayCountConvention::ACT_360:
+                default:
+                {
+                    count = double((sys_days{ pillar_day } - sys_days{ start_date }).count()) / 360.0;
+                    break;
+                }
+            }
+            data.emplace_back(Maturity{ pillar_day, count });
+            pillar_day += months(tenor);
+            i += 1;
+        }
+        return data;
+    }
 };
-
-std::vector<Maturity> generate_pay_calendar(const Calendar& cal, bool begin_mode = true)
-{
-    using namespace date;
-    std::vector<Maturity> data;
-    auto d = cal.start_date;
-    int i = 0;
-    if (!begin_mode)
-    {
-        d += months(cal.tenor);
-        i++;
-    }
-    while ((begin_mode && (d < cal.end_date)) || (!begin_mode && (d <= cal.end_date)))
-    {
-        // ACT/ACT
-        double actual;
-        switch (cal.dc_convention)
-        {
-        case DayCountConvention::ACT_ACT:
-            actual = double((sys_days{ dec / day(31) / d.year() } - sys_days{ jan / day(1) / d.year() }).count());
-            break;
-        case DayCountConvention::ACT_365:
-            actual = 365.0;
-            break;
-        case DayCountConvention::EQUALS:
-            actual = double(i) / (12.0 / cal.tenor);
-            break;
-        case DayCountConvention::ACT_360:
-        default:
-            actual = 360.0;
-            break;
-        }
-
-        if (cal.dc_convention != DayCountConvention::EQUALS)
-        {
-            double maturity = double((sys_days{ d } - sys_days{ cal.start_date }).count()) / actual;
-            data.emplace_back(Maturity{ d, maturity });
-        }
-        else
-        {
-            data.emplace_back(Maturity{ d, actual });
-        }
-
-        // TODO: use switch tenor
-        d += months(cal.tenor);
-        i += 1;
-    }
-    return data;
-}
 
 class DiscountFactor
 {
@@ -158,7 +216,8 @@ public:
         df = other.df;
     }
 
-    DiscountFactor(DiscountFactor&& other) noexcept {
+    DiscountFactor(DiscountFactor&& other) noexcept
+    {
         df = other.df;
     }
 
@@ -200,39 +259,41 @@ public:
             conv == rhs.conv;
     }
 
-    [[nodiscard]] std::vector<DiscountFactor> get_discount_factors_to_0(const Calendar& cal) const
+    [[nodiscard]] std::vector<DiscountFactor> get_discount_factors_1_T(const Calendar& cal) const
     {
         std::vector<DiscountFactor> dfs;
-        // for (int i = 1; i <= years * c; ++i)
-
-        for (auto& maturity : generate_pay_calendar(cal, false))
+        for (auto& maturity : cal.generate(false))
         {
-            // dfs.push_back(to_discount_factor(double(i) / c));
             dfs.push_back(to_discount_factor(maturity));
         }
         return dfs;
     }
 
-    [[nodiscard]] std::vector<DiscountFactor> get_discount_factors_to_T(const Calendar& cal) const
+    [[nodiscard]] std::vector<DiscountFactor> get_discount_factors_0_T_less1(const Calendar& cal) const
     {
         std::vector<DiscountFactor> dfs;
-        // for (int i = 0; i < years * c; ++i)
-        for (auto& maturity : generate_pay_calendar(cal, true))
+        for (auto& maturity : cal.generate(true))
         {
-            // dfs.push_back(to_discount_factor(double(i) / c));
             dfs.push_back(to_discount_factor(maturity));
         }
         return dfs;
+    }
+
+    [[nodiscard]] Maturity get_first_maturity(const Calendar& cal) const
+    {
+        auto mats = cal.generate(true);
+        return mats.front();
+    }
+
+    [[nodiscard]] Maturity get_last_maturity(const Calendar& cal) const
+    {
+        auto mats = cal.generate(false);
+        return mats.back();
     }
 
     [[nodiscard]] DiscountFactor to_discount_factor(const Maturity& maturity) const
     {
         return DiscountFactor(zc2df(r, maturity.value, conv, c));
-    }
-
-    [[nodiscard]] DiscountFactor to_discount_factor(double maturity) const
-    {
-        return DiscountFactor(zc2df(r, maturity, conv, c));
     }
 
     [[nodiscard]] InterestRate to_other_interest_rate(Convention other_convention, int other_compound_times = Frequency::ANNUAL) const
@@ -246,12 +307,11 @@ public:
     Convention conv;  // convention
 };
 
-
 // TODO:
 class CashFlow
 {
 public:
-    explicit CashFlow(double maturity_, double cash_)
+    explicit CashFlow(Maturity maturity_, double cash_)
         : maturity(maturity_)
         , cash(cash_)
     {
@@ -259,9 +319,21 @@ public:
     }
 
 public:
+    Maturity maturity;
     double cash;
-    double maturity;
 };
+
+struct Legs
+{
+    std::vector<CashFlow> flows;
+};
+
+struct Product
+{
+    Calendar cal;
+    std::vector<Legs> legs;
+};
+
 
 // TODO:
 class Coupon
@@ -395,7 +467,7 @@ double compute_irr(const std::vector<double>& cf, Convention convention, int com
 InterestRate equivalent_rate(double rate, Convention convention, int compound_times, Convention other_convention, int other_compound_times)
 {
     return InterestRate(rate, convention, compound_times)
-        .to_discount_factor(1.0)
+        .to_discount_factor(Maturity(1.0))
         .to_interest_rate(1.0, other_convention, other_compound_times);
 }
 
@@ -404,30 +476,49 @@ InterestRate equivalent_rate(double rate, int compound_times, int other_compound
     return equivalent_rate(rate, Convention::YIELD, compound_times, Convention::YIELD, other_compound_times);
 }
 
+/*
 std::vector<DiscountFactor> get_discount_factors_1_T(double r, const Calendar& cal, Convention convention, int compound_times)
 {
     InterestRate ir(r, convention, compound_times);
-    return ir.get_discount_factors_to_0(cal);
+    return ir.get_discount_factors_1_T(cal);
 }
+*/
 
+/*
 std::vector<DiscountFactor> get_discount_factors_0_T_less1(double r, const Calendar& cal, Convention convention, int compound_times)
 {
     InterestRate ir(r, convention, compound_times);
-    return ir.get_discount_factors_to_T(cal);
+    return ir.get_discount_factors_0_T_less1(cal);
 }
+*/
 
-// tenemos un cash en "maturity" y nos lo traemos a presente
-double to_present_value(double cash, const InterestRate& r, double maturity)
+// tenemos un cash en "maturity" y nos lo traemos a "0"
+double to_present_value(double cash, const InterestRate& r, const Maturity& maturity)
 {
     return cash * r.to_discount_factor(maturity).df;
 }
 
-// tenemos un cash en "maturity" y nos lo traemos a futuro
-double to_future_value(double cash, const InterestRate& r, double maturity)
+// tenemos un cash en "0" y nos lo traemos a "maturity"
+double to_future_value(double cash, const InterestRate& r, const Maturity& maturity)
 {
     return cash / r.to_discount_factor(maturity).df;
 }
 
+// tenemos un cash al final del calendario y nos lo traemos a "0"
+double to_present_value(double cash, const InterestRate& r, const Calendar& cal)
+{
+    auto maturity = r.get_last_maturity(cal); // obtener maturity del cash (teniendo cierto "cal")
+    return to_present_value(cash, r, maturity);
+}
+
+// tenemos un en 0 y nos lo traemos al final del calendario
+double to_future_value(double cash, const InterestRate& r, const Calendar& cal)
+{
+    auto maturity = r.get_last_maturity(cal); // obtener maturity del cash (teniendo cierto "cal")
+    return to_future_value(cash, r, maturity);
+}
+
+/*
 double real_from_coupon(double coupon, double maturity, Convention conv, int compound_times)
 {
     return coupon * maturity * compound_times;
@@ -437,159 +528,174 @@ double coupon_from_real(double real, double maturity, Convention conv, int compo
 {
     return real / (maturity * compound_times);
 }
+*/
 
 // only coupons
-double npv_from_coupon(double coupon, const InterestRate& interest_rate, double years)
+double npv_from_coupon(double coupon, const InterestRate& interest_rate, const Calendar& cal)
 {
-    return npv_from_growth_coupon(coupon, 0.0, interest_rate.r, years, interest_rate.conv, interest_rate.c);
+    return npv_from_growth_coupon(coupon, InterestRate(0.0), interest_rate, cal);
 }
 
-double npv_from_growth_coupon(double coupon, double g, double interest_rate, double maturity, Convention convention, int compound_times, Convention g_convention, int g_compound_times)
+double npv_from_growth_coupon(double coupon, const InterestRate& growth_rate, const InterestRate& interest_rate, const Calendar& cal)
 {
+    /*
     auto start_date = date::year(2012) / 1 / 1;
     auto end_date = date::year(2012 + maturity) / 1 / 1;
     int tenor = int(12.0 / compound_times);
-    Calendar cal{start_date, end_date, tenor, DayCountConvention::EQUALS};
-    auto dfs = get_discount_factors_1_T(interest_rate, cal, convention, compound_times);
+    Calendar cal(start_date, end_date, tenor, DayCountConvention::EQUALS);
+    */
+
+    // InterestRate ir(interest_rate, convention, compound_times);
+    auto dfs = interest_rate.get_discount_factors_1_T(cal);
+
+    // auto dfs = get_discount_factors_1_T(interest_rate, cal, convention, compound_times);
     double npv = 0.0;
     double i = 0.0;
     for (const auto& df : dfs)
     {
-        npv += (df.df * (coupon / compound_times)) / zc2df(g, i, g_convention, g_compound_times);
+        npv += (df.df * (coupon / interest_rate.c)) / zc2df(growth_rate.r, i, growth_rate.conv, growth_rate.c);
         i += 1.0;
     }
     return npv;
 }
 
-double fv_from_growth_coupon(double coupon, double g, double interest_rate, double maturity, Convention convention, int compound_times, Convention g_convention, int g_compound_times)
+double fv_from_growth_coupon(double coupon, const InterestRate& growth_rate, const InterestRate& interest_rate, const Calendar& cal)
 {
-    double npv = npv_from_growth_coupon(coupon, g, interest_rate, maturity, convention, compound_times, g_convention, g_compound_times);
-    return to_future_value(npv, InterestRate(interest_rate, convention, compound_times), maturity);
+    double npv = npv_from_growth_coupon(coupon, growth_rate, interest_rate, cal);
+    return to_future_value(npv, interest_rate, cal);
 }
 
-double fv_from_coupon(double coupon, double interest_rate, double maturity, Convention convention, int compound_times)
+double fv_from_coupon(double coupon, const InterestRate& interest_rate, const Calendar& cal)
 {
-    return fv_from_growth_coupon(coupon, 0.0, interest_rate, maturity, convention, compound_times);
+    return fv_from_growth_coupon(coupon, InterestRate(0.0), interest_rate, cal);
 }
 
-double coupon_from_npv(double npv, double interest_rate, double maturity, Convention convention, int compound_times)
+double coupon_from_npv(double npv, const InterestRate& interest_rate, const Calendar& cal)
 {
     using namespace date;
+    /*
     auto start_date = 2012_y / 1 / 1;
     auto end_date = year(2012 + maturity) / 1 / 1;
     int tenor = int(12.0 / compound_times);
-    Calendar cal{ start_date, end_date, tenor, DayCountConvention::EQUALS };
-    auto dfs = get_discount_factors_1_T(interest_rate, cal, convention, compound_times);
+    Calendar cal( start_date, end_date, tenor, DayCountConvention::EQUALS );
+    */
+
+    auto dfs = interest_rate.get_discount_factors_1_T(cal);
+
     double total_df = 0.0;
     for (const auto& df : dfs)
     {
         total_df += df.df;
     }
-    return (npv * compound_times) / total_df;
+    return (npv * interest_rate.c) / total_df;
 }
 
 // VAN = coupons - initial investement
-double classic_npv(double investment, double coupon, const InterestRate& interest_rate, double maturity)
+double classic_npv(double investment, double coupon, const InterestRate& interest_rate, const Calendar& cal)
 {
-    return npv_from_coupon(coupon, interest_rate, maturity) - investment;
+    return npv_from_coupon(coupon, interest_rate, cal) - investment;
 }
 
 // coupons + payment on yield-maturity
-double bond_npv(double face_value, double coupon, double interest_rate, double maturity, Convention convention, int compound_times)
+double bond_npv(double face_value, double coupon, const InterestRate& interest_rate, const Calendar& cal)
 {
-    double coupons = npv_from_coupon(coupon, InterestRate(interest_rate, convention, compound_times), maturity);
-    double yield_on_payment = to_present_value(face_value, InterestRate(interest_rate, convention, compound_times), maturity);
+    double coupons = npv_from_coupon(coupon, interest_rate, cal);
+    double yield_on_payment = to_present_value(face_value, interest_rate, cal);
     return coupons + yield_on_payment;
 }
 
 // stock investment = coupons + payment on yield-maturity - initial investement
-double stock_npv(double investment, double dividend, double interest_rate, double maturity, Convention convention, int compound_times)
+double stock_npv(double investment, double dividend, const InterestRate& interest_rate, const Calendar& cal)
 {
-    double coupon = investment * (dividend - interest_rate);
-    double coupons = npv_from_coupon(coupon, InterestRate(interest_rate, convention, compound_times), maturity);
-    double yield_on_payment = to_present_value(investment, InterestRate(interest_rate, convention, compound_times), maturity);
+    double coupon = investment * (dividend - interest_rate.r);
+    double coupons = npv_from_coupon(coupon, interest_rate, cal);
+    double yield_on_payment = to_present_value(investment, interest_rate, cal);
     double npv = coupons + yield_on_payment - investment;
     return npv;
 }
 
 // TODO: reimplement it
-double stock_fv(double investment, double dividend, double interest_rate, double maturity, Convention convention, int compound_times)
+double stock_fv(double investment, double dividend, const InterestRate& interest_rate, const Calendar& cal)
 {
-    double coupon = investment * (dividend - interest_rate);
-    double coupons = fv_from_coupon(coupon, interest_rate, maturity, convention, compound_times);
+    double coupon = investment * (dividend - interest_rate.r);
+    double coupons = fv_from_coupon(coupon, interest_rate, cal);
     double npv = coupons;
     return npv;
 }
 
-// TODO: reimplement it
-double stock_real(double investment, double dividend, double interest_rate, double maturity, Convention convention, int compound_times)
+double coupon_from_growth_coupon(double coupon, const InterestRate& growth_rate, const InterestRate& interest_rate, const Calendar& cal)
 {
-    double coupon = investment * (dividend - interest_rate);
-    double investment_fv = to_future_value(investment, InterestRate(interest_rate, convention, compound_times), maturity);
-    double coupons = real_from_coupon(coupon, maturity, convention, compound_times);
-    double npv = investment - coupons - investment_fv;
-    return npv;
+    double npv = npv_from_growth_coupon(coupon, growth_rate, interest_rate, cal);
+    return coupon_from_npv(npv, interest_rate, cal);
 }
 
-double coupon_from_growth_coupon(double coupon, double g, double interest_rate, double maturity, Convention convention, int compound_times, Convention g_convention, int g_compound_times)
+double coupon_from_fv(double fv, const InterestRate& interest_rate, const Calendar& cal)
 {
-    double npv = npv_from_growth_coupon(coupon, g, interest_rate, maturity, convention, compound_times, g_convention, g_compound_times);
-    return coupon_from_npv(npv, interest_rate, maturity, convention, compound_times);
-}
-
-double coupon_from_fv(double fv, double interest_rate, double maturity, Convention convention, int compound_times)
-{
+    /*
     using namespace date;
     auto start_date = 2012_y / 1 / 1;
     auto end_date = year(2012 + maturity) / 1 / 1;
     int tenor = int(12.0 / compound_times);
-    Calendar cal{ start_date, end_date, tenor, DayCountConvention::EQUALS };
-    auto dfs = get_discount_factors_0_T_less1(interest_rate, cal, convention, compound_times);
+    Calendar cal( start_date, end_date, tenor, DayCountConvention::EQUALS );
+    */
+
+    // InterestRate ir(interest_rate, convention, compound_times);
+    auto dfs = interest_rate.get_discount_factors_0_T_less1(cal);
+
+    // auto dfs = get_discount_factors_0_T_less1(interest_rate, cal, convention, compound_times);
     double total_df = 0.0;
     for (const auto& df : dfs)
     {
         total_df += 1.0 / df.df;
     }
-    return (fv * compound_times) / total_df;
+    return (fv * interest_rate.c) / total_df;
 }
 
-InterestRate on_capital(double initial, double final, double maturity, Convention convention, int compound_times)
+InterestRate on_capital(double initial, double final_value, double maturity, Convention convention, int compound_times)
 {
     if (convention == Convention::YIELD && compound_times == Frequency::ANNUAL)
     {
         // cagr
-        return InterestRate(pow(final / initial, 1.0 / maturity) - 1.0);
+        return InterestRate(pow(final_value / initial, 1.0 / maturity) - 1.0);
     }
     else
     {
-        return InterestRate((final - initial) / initial, Convention::LINEAR)
-            .to_discount_factor(1.0)
+        return InterestRate((final_value - initial) / initial, Convention::LINEAR)
+            .to_discount_factor(Maturity(1.0))
             .to_interest_rate(maturity, convention, compound_times);
     }
 }
 
 TEST_CASE("bond_npv", "[fv]") {
 
+    using namespace date;
+
     // Comparado con: https://mathcracker.com/es/calculadora-valor-bonos#results
     // valor presente de un bono
     // valorar un bono que da un yield "seguro" haciendo otros proyectos risk free
-    double npv = bond_npv(16000,
-        // inversion "segura" ofrecida por el bono
-        100, 0.06,
-        // inversion libre de riesgo en el mercado
-        20);
+    double npv = bond_npv(
+        // face value
+        16000,
+        // cupon
+        100, 
+        InterestRate(0.06),
+        // calendar
+        Calendar(2022_y/1/1, 20));
 
     REQUIRE(npv == Catch::Approx(6135.87));
 }
 
 TEST_CASE("fv_from_coupon", "[fv]") {
 
+    using namespace date;
+
     // Ahorro inicial en el futuro
 
     double initial = 10000;
     double r = 0.07;
     double maturity = 8;
-    double fv1 = to_future_value(initial, InterestRate(r), maturity);
+    auto cal = Calendar(2022_y / 1 / 1, maturity);
+    double fv1 = to_future_value(initial, InterestRate(r), cal);
     double aportado1 = initial;
     double presente1 = initial;
 
@@ -601,11 +707,11 @@ TEST_CASE("fv_from_coupon", "[fv]") {
     double cuota;
 
     cuota = 5000;
-    double aportado2 = real_from_coupon(cuota, maturity, Convention::YIELD);
-    double presente2 = npv_from_coupon(cuota, InterestRate(r), maturity);
-    double fv2 = fv_from_coupon(cuota, r, maturity, Convention::YIELD);
+    //double aportado2 = real_from_coupon(cuota, maturity, Convention::YIELD);
+    double presente2 = npv_from_coupon(cuota, InterestRate(r), cal);
+    double fv2 = fv_from_coupon(cuota, InterestRate(r), cal);
 
-    REQUIRE(aportado2 == Catch::Approx(40000.0));
+    // REQUIRE(aportado2 == Catch::Approx(40000.0));
     REQUIRE(presente2 == Catch::Approx(29856.4925310687));
     REQUIRE(fv2 == Catch::Approx(51299.0128451372));
 
@@ -613,43 +719,46 @@ TEST_CASE("fv_from_coupon", "[fv]") {
 
     cuota = 1000;
     double compound_times = 12;
-    double aportado3 = real_from_coupon(cuota, maturity, Convention::YIELD, compound_times);
-    double presente3 = npv_from_coupon(cuota * compound_times, InterestRate(r, Convention::YIELD, compound_times), maturity);
-    double fv3 = fv_from_coupon(cuota * compound_times, r, maturity, Convention::YIELD, compound_times);
+    auto cal2 = Calendar(2022_y / 1 / 1, maturity, 1);
+    //double aportado3 = real_from_coupon(cuota, maturity, Convention::YIELD, compound_times);
+    double presente3 = npv_from_coupon(cuota * compound_times, InterestRate(r, Convention::YIELD, compound_times), cal2);
+    double fv3 = fv_from_coupon(cuota * compound_times, InterestRate(r, Convention::YIELD, compound_times), cal2);
 
     REQUIRE(presente3 == Catch::Approx(73347.5686854354));
-    REQUIRE(aportado3 == Catch::Approx(96000.0));
+    // REQUIRE(aportado3 == Catch::Approx(96000.0));
     REQUIRE(fv3 == Catch::Approx(128198.8210340072));
 
-    double final;
+    double final_value;
     double presente_total;
-    double aportado_total = aportado1 + aportado2 + aportado3;
+    double aportado_total = aportado1; // + aportado2 + aportado3;
     presente_total = presente1 + presente2 + presente3;
-    final = fv1 + fv2 + fv3;
-    REQUIRE(coupon_from_real(aportado_total, maturity, Convention::YIELD, 12) == Catch::Approx(1520.8333333333));
-    REQUIRE(coupon_from_real(aportado_total, maturity, Convention::YIELD) == Catch::Approx(18250.0));
+    final_value = fv1 + fv2 + fv3;
+    //REQUIRE(coupon_from_real(aportado_total, maturity, Convention::YIELD, 12) == Catch::Approx(1520.8333333333));
+    //REQUIRE(coupon_from_real(aportado_total, maturity, Convention::YIELD) == Catch::Approx(18250.0));
     REQUIRE(presente_total == Catch::Approx(113204.0612165041));
-    REQUIRE(aportado_total == Catch::Approx(146000.0));
-    REQUIRE(final == Catch::Approx(196679.6956774635));
+    REQUIRE(aportado_total == Catch::Approx(10000));
+    REQUIRE(final_value == Catch::Approx(196679.6956774635));
 
-    InterestRate r_invest = on_capital(aportado_total, final, maturity);
-    REQUIRE(r_invest.r == Catch::Approx(0.0379485678));
+    InterestRate r_invest = on_capital(aportado_total, final_value, maturity);
+    REQUIRE(r_invest.r == Catch::Approx(0.4511755111));
 }
 
 TEST_CASE("fv_from_coupon2", "[fv]")
 {
     // Ahorro periodico (semanal)
+    using namespace date;
 
     double cuota = 200;
     double frecuencia = 54;
     double maturity = 3.0;
     double r = 0.08;
-    double presente = npv_from_coupon(cuota * frecuencia, InterestRate(r), maturity);
-    double aportado = real_from_coupon(cuota * frecuencia, maturity, Convention::YIELD);
-    double future = fv_from_coupon(cuota * frecuencia, r, maturity, Convention::YIELD);
+    auto cal = Calendar(2022_y / 1 / 1, maturity);
+    double presente = npv_from_coupon(cuota * frecuencia, InterestRate(r), cal);
+    //double aportado = real_from_coupon(cuota * frecuencia, maturity, Convention::YIELD);
+    double future = fv_from_coupon(cuota * frecuencia, InterestRate(r), cal);
 
     REQUIRE(presente == Catch::Approx(27832.6474622771));
-    REQUIRE(aportado == Catch::Approx(32400.0));
+    //REQUIRE(aportado == Catch::Approx(32400.0));
     REQUIRE(future == Catch::Approx(35061.12));
 }
 
@@ -701,22 +810,25 @@ TEST_CASE("df & zc", "[fv]") {
 
 TEST_CASE("bond_npv2", "[fv]") {
 
+    using namespace date;
+
     double cash = 17181.8617983192;
     double r = 0.07;
     double maturity = 8;
-    REQUIRE(to_present_value(cash, InterestRate(r), maturity) == Catch::Approx(10000));
+    auto cal = Calendar(2022_y / 1 / 1, maturity);
+    REQUIRE(to_present_value(cash, InterestRate(r), cal) == Catch::Approx(10000));
 
     // future value
     double fv = 51299.0128451372;
-    REQUIRE(coupon_from_fv(fv, r, maturity, Convention::YIELD) == Catch::Approx(5000));
-    REQUIRE(fv_from_coupon(5000, r, maturity, Convention::YIELD) == Catch::Approx(fv));
+    REQUIRE(coupon_from_fv(fv, InterestRate(r), cal) == Catch::Approx(5000));
+    REQUIRE(fv_from_coupon(5000, InterestRate(r), cal) == Catch::Approx(fv));
 
     // traer flujos futuros a presente
-    double npv = npv_from_coupon(5000, InterestRate(r), maturity);
+    double npv = npv_from_coupon(5000, InterestRate(r), cal);
     REQUIRE(npv == Catch::Approx(29856.4925310687));
 
     // Traerme a presente flujos futuros anuales
-    REQUIRE(coupon_from_npv(npv, r, maturity, Convention::YIELD) == Catch::Approx(5000));
+    REQUIRE(coupon_from_npv(npv, InterestRate(r), cal) == Catch::Approx(5000));
 
     REQUIRE(classic_npv(
         // inversion
@@ -726,9 +838,9 @@ TEST_CASE("bond_npv2", "[fv]") {
         // free risk rate
         InterestRate(0.01),
         // years
-        1) == Catch::Approx(-5504.9504950495));
+        Calendar(2022_y / 1 / 1, 1)) == Catch::Approx(-5504.9504950495));
 
-    double npv1 = classic_npv(1000, 100, InterestRate(-0.1940185202), 6);
+    double npv1 = classic_npv(1000, 100, InterestRate(-0.1940185202), Calendar(2022_y / 1 / 1, 6));
     REQUIRE(npv1 == Catch::Approx(364.7956282082));
 
     std::vector<double> cf = { -1000, 100, 100, 100, 100, 100 };
@@ -738,33 +850,37 @@ TEST_CASE("bond_npv2", "[fv]") {
 
 TEST_CASE("real coupon", "[fv]") {
 
+    using namespace date;
+
     double coupon_netflix = 9.9;
     double maturity = 10;
-    double real = real_from_coupon(coupon_netflix, maturity, Convention::YIELD, 12);
 
-    REQUIRE(real == Catch::Approx(1188.0));
+    auto cal = Calendar(2022_y / 1 / 1, maturity);
+
+    //double real = real_from_coupon(coupon_netflix, maturity, Convention::YIELD, 12);
+    //REQUIRE(real == Catch::Approx(1188.0));
 
     // dividendo 0.08, precio dinero 0.03
 
-    double npv = stock_npv(1000, 0.08, 0.03, maturity, Convention::YIELD);
+    double npv = stock_npv(1000, 0.08, InterestRate(0.03), cal);
     REQUIRE(npv == Catch::Approx(170.6040567355));
 
-    double fv = stock_fv(1000, 0.08, 0.03, maturity, Convention::YIELD);
+    double fv = stock_fv(1000, 0.08, InterestRate(0.03), cal);
     REQUIRE(fv == Catch::Approx(573.1939655735));
 
-    double real2 = stock_real(1000, 0.08, 0.03, maturity, Convention::YIELD);
-    REQUIRE(real2 == Catch::Approx(-843.9163793441));
+    // double real2 = stock_real(1000, 0.08, 0.03, maturity, Convention::YIELD);
+    // REQUIRE(real2 == Catch::Approx(-843.9163793441));
 
     // dividendo 0.08, precio dinero 0.12
 
-    double npv_ = stock_npv(1000, 0.08, 0.12, maturity, Convention::YIELD);
+    double npv_ = stock_npv(1000, 0.08, InterestRate(0.12), cal);
     REQUIRE(npv_ == Catch::Approx(-904.0356845457));
 
-    double fv_ = stock_fv(1000, 0.08, 0.12, maturity, Convention::YIELD);
+    double fv_ = stock_fv(1000, 0.08, InterestRate(0.12), cal);
     REQUIRE(fv_ == Catch::Approx(-701.9494027814));
 
-    double real2_ = stock_real(1000, 0.08, 0.12, maturity, Convention::YIELD);
-    REQUIRE(real2_ == Catch::Approx(-1705.8482083442));
+    // double real2_ = stock_real(1000, 0.08, 0.12, maturity, Convention::YIELD);
+    // REQUIRE(real2_ == Catch::Approx(-1705.8482083442));
 
     REQUIRE(on_capital(npv, fv, maturity, Convention::EXPONENTIAL).r == Catch::Approx(0.1211878754));
     REQUIRE(on_capital(npv_, fv_, maturity, Convention::EXPONENTIAL).r == Catch::Approx(-0.0253007508));
@@ -842,51 +958,62 @@ TEST_CASE("tn & te", "[fv]")
 
 TEST_CASE("coupon growth", "[fv]")
 {
+    using namespace date;
+
+    auto cal = Calendar(2022_y / 1 / 1, 5);
+
     // el dividendo no crece
-    double npv1 = npv_from_coupon(1000, InterestRate(0.08), 5);
+    double npv1 = npv_from_coupon(1000, InterestRate(0.08), cal);
     REQUIRE(npv1 == Catch::Approx(3992.7100370781));
 
     // reinvertir anualmente
-    double npv2 = npv_from_growth_coupon(1000, 0.05, 0.08, 5);
+    double npv2 = npv_from_growth_coupon(1000, InterestRate(0.05), InterestRate(0.08), cal);
     REQUIRE(npv2 == Catch::Approx(4379.4737959505));
 }
 
 TEST_CASE("coupon growth2", "[fv]")
 {
+    using namespace date;
+
+    auto cal = Calendar(2022_y / 1 / 1, 5, 1);
+
     // npv y fv from growth cupon
 
-    double npv_from_gcoupon = npv_from_growth_coupon(1000, 0.05, 0.08, 5, Convention::YIELD, 12, Convention::YIELD, 12);
+    double npv_from_gcoupon = npv_from_growth_coupon(1000, InterestRate(0.05, Convention::YIELD, 12), InterestRate(0.08, Convention::YIELD, 12), cal);
     REQUIRE(npv_from_gcoupon == Catch::Approx(23219.4483321569));
 
-    double fv_from_gcoupon = fv_from_growth_coupon(1000, 0.05, 0.08, 5, Convention::YIELD, 12, Convention::YIELD, 12);
+    double fv_from_gcoupon = fv_from_growth_coupon(1000, InterestRate(0.05, Convention::YIELD, 12), InterestRate(0.08, Convention::YIELD, 12), cal);
     REQUIRE(fv_from_gcoupon == Catch::Approx(34593.3954467948));
 
 
     // cupon from growth cupon
 
-    double fixed_coupon = coupon_from_growth_coupon(1000, 0.05, 0.08, 5, Convention::YIELD, 12, Convention::YIELD, 12);
+    double fixed_coupon = coupon_from_growth_coupon(1000, 
+        InterestRate(0.05, Convention::YIELD, 12), 
+        InterestRate(0.08, Convention::YIELD, 12), 
+        cal);
     REQUIRE(fixed_coupon == Catch::Approx(5649.6802745071));
 
     // fv
 
-    double coupon1 = coupon_from_fv(fv_from_gcoupon, 0.08, 5, Convention::YIELD, 12);
+    double coupon1 = coupon_from_fv(fv_from_gcoupon, InterestRate(0.08, Convention::YIELD, 12), cal);
     REQUIRE(coupon1 == Catch::Approx(fixed_coupon));
 
-    double fv4 = fv_from_coupon(coupon1, 0.08, 5, Convention::YIELD, 12);
+    double fv4 = fv_from_coupon(coupon1, InterestRate(0.08, Convention::YIELD, 12), cal);
     REQUIRE(fv4 == Catch::Approx(fv_from_gcoupon));
 
-    double fv5 = fv_from_coupon(fixed_coupon, 0.08, 5, Convention::YIELD, 12);
+    double fv5 = fv_from_coupon(fixed_coupon, InterestRate(0.08, Convention::YIELD, 12), cal);
     REQUIRE(fv5 == Catch::Approx(fv_from_gcoupon));
 
     // npv
 
-    double coupon2 = coupon_from_npv(npv_from_gcoupon, 0.08, 5, Convention::YIELD, 12);
+    double coupon2 = coupon_from_npv(npv_from_gcoupon, InterestRate(0.08, Convention::YIELD, 12), cal);
     REQUIRE(coupon2 == Catch::Approx(fixed_coupon));
 
-    double npv4 = npv_from_coupon(coupon2, InterestRate(0.08, Convention::YIELD, 12), 5);
+    double npv4 = npv_from_coupon(coupon2, InterestRate(0.08, Convention::YIELD, 12), cal);
     REQUIRE(npv4 == Catch::Approx(npv_from_gcoupon));
 
-    double npv5 = npv_from_coupon(fixed_coupon, InterestRate(0.08, Convention::YIELD, 12), 5);
+    double npv5 = npv_from_coupon(fixed_coupon, InterestRate(0.08, Convention::YIELD, 12), cal);
     REQUIRE(npv5 == Catch::Approx(npv_from_gcoupon));
 }
 
@@ -912,15 +1039,82 @@ TEST_CASE("date C++20", "[date]")
     }
     REQUIRE(last_maturity == Catch::Approx(9.9505494505));
     
-    Calendar cal{start_date, end_date, 1, DayCountConvention::EQUALS};
+    Calendar cal{start_date, end_date, 3, DayCountConvention::EQUALS };
 
-    for (auto& maturity : generate_pay_calendar(cal, true))
+    std::vector<double> v1, v2;
+    for (auto& maturity : cal.generate(true))
     {
-        std::cout << "pillar: " << maturity.pillar << " - value: " << maturity.value << std::endl;
+        std::cout << "begin mode = true, pillar: " << maturity.pillar << " - value: " << maturity.value << std::endl;
+        v1.push_back(maturity.value);
     }
-    int c = 12;
+    for (auto& maturity : cal.generate(false))
+    {
+        std::cout << "begin mode = false, pillar: " << maturity.pillar << " - value: " << maturity.value << std::endl;
+        v2.push_back(maturity.value);
+    }
+    std::vector<double> m1, m2;
+    int c = 4;
     for (int i = 0; i < 10 * c; ++i)
     {
         std::cout << "value: " << double(i) / c << std::endl;
+        m1.push_back(double(i) / c);
     }
+    for (int i = 1; i <= 10 * c; ++i)
+    {
+        std::cout << "value: " << double(i) / c << std::endl;
+        m2.push_back(double(i) / c);
+    }
+    REQUIRE(v1 == m1);
+    REQUIRE(v2 == m2);
+}
+
+TEST_CASE("forwards1", "[fw]")
+{
+    using namespace date;
+
+    auto start_date = jan / day(1) / 2020;
+    auto end_date = jan / day(1) / 2030;
+
+    Calendar cal{ start_date, end_date, 3, DayCountConvention::EQUALS };
+    auto dfs = cal.generate(false);
+
+    InterestRate r(0.08);
+
+    double cash = 1;
+
+    double fwd2 = dfs[0].forward(cash, r, dfs[1]);
+    double fwd3 = dfs[1].forward(cash, r, dfs[2]);
+
+    double fwr1 = dfs[0].forward_rate(cash, r, dfs[1]);
+    double fwr2 = dfs[1].forward_rate(cash, r, dfs[2]);
+    double fwr3 = dfs[2].forward_rate(cash, r, dfs[3]);
+
+    REQUIRE((fwr1) == Catch::Approx(0.0777061876));
+    REQUIRE((fwr2) == Catch::Approx(0.0777061876));
+    REQUIRE((fwr3) == Catch::Approx(0.0777061876));
+
+    REQUIRE(to_future_value(cash, r, dfs[0]) == Catch::Approx(1.0194265469083));
+    REQUIRE(to_future_value(cash, r, dfs[1]) == Catch::Approx(1.0392304845413));
+    REQUIRE(to_future_value(cash, r, dfs[2]) == Catch::Approx(1.0594191442978));
+    REQUIRE(to_future_value(cash, r, cal) == Catch::Approx(2.1589249972728));
+
+    REQUIRE((1.0392304845413 * fwd2) == Catch::Approx(1.0194265469));
+    REQUIRE((1.0594191442978 * fwd3) == Catch::Approx(1.0392304845413));
+    REQUIRE((1.0594191442978 * fwd2 * fwd3) == Catch::Approx(1.0194265469));
+
+    REQUIRE(to_present_value(1.0194265469083, r, dfs[0]) == Catch::Approx(1.0));
+    REQUIRE(to_present_value(1.0392304845413, r, dfs[1]) == Catch::Approx(1.0));
+    REQUIRE(to_present_value(1.0594191442978, r, dfs[2]) == Catch::Approx(1.0));
+    REQUIRE(to_present_value(2.1589249972728, r, cal) == Catch::Approx(1.0));
+
+    double df0 = r.to_discount_factor(dfs[0]).df;
+    double df1 = r.to_discount_factor(dfs[1]).df;
+
+    REQUIRE(df0 == Catch::Approx(0.9809436521));
+    REQUIRE(df1 == Catch::Approx(0.9622504486));
+
+    double cdf1 = dfs[0].next_discount(df0, fwr1, dfs[1]);
+    REQUIRE(cdf1 == Catch::Approx(df1));
+
+    // REQUIRE((1 * 0.0777061876 * 2) == Catch::Approx(2.1554123752));
 }
