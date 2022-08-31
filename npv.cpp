@@ -1207,4 +1207,9 @@ TEST_CASE("POO", "[npv]")
     REQUIRE(Coupon(cal, ir, 149.0294886971, InterestRate(-0.09)).to_start_cashflow().cash == Catch::Approx(718.5193716059));
     REQUIRE(Coupon(cal, ir, 149.0294886971, InterestRate(0.25)).to_end_cashflow().cash == Catch::Approx(6271.7751917127));
     REQUIRE(Coupon(cal, ir, 149.0294886971, InterestRate(-0.09)).to_end_cashflow().cash == Catch::Approx(1551.2294323847));
+
+    // crecimiento del dividendo
+    auto growth = on_capital(0.20, 0.25, 3, Convention::YIELD, Frequency::QUATERLY);
+    REQUIRE(growth.value == Catch::Approx(0.0750770605));
+    REQUIRE(Coupon(cal, InterestRate(0.03), 2000, growth).to_end_cashflow().cash == Catch::Approx(32192.5659896183));
 }
