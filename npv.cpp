@@ -94,37 +94,6 @@ struct Maturity
 
     }
 
-    double forward(double cash, const InterestRate& interest_rate, const Maturity& other)
-    {
-        double df0 = 1.0 / to_future_value(cash, interest_rate, *this);
-        double df1 = 1.0 / to_future_value(cash, interest_rate, other);
-
-        // double df0 = interest_rate.to_discount_factor(*this).df;
-        // double df1 = interest_rate.to_discount_factor(other).df;
-
-        return df1 / df0;
-    }
-
-    double forward_rate(double cash, const InterestRate& interest_rate, const Maturity& other)
-    {
-        double df0 = 1.0 / to_future_value(cash, interest_rate, *this);
-        double df1 = 1.0 / to_future_value(cash, interest_rate, other);
-
-        // double df0 = interest_rate.to_discount_factor(*this).df;
-        // double df1 = interest_rate.to_discount_factor(other).df;
-
-        double m = other.value - value;
-
-        return (df0 / df1 - 1.0) / m;
-    }
-
-    double next_discount(double discount, double forward_rate, const Maturity& other)
-    {
-        double m = other.value - value;
-
-        return discount / (1.0 + (other.value - value) * forward_rate);
-    }
-
     date::year_month_day pillar;
     double value;
 };
@@ -154,19 +123,19 @@ struct Calendar
 
     }
 
-    std::vector<Maturity> generate(bool begin_mode = true) const
+    std::vector<Maturity> generate(bool start = true) const
     {
         using namespace date;
 
         std::vector<Maturity> data;
         auto pillar_day = start_date;
         int i = 0;
-        if (!begin_mode)
+        if (!start)
         {
             pillar_day += months(tenor);
             i++;
         }
-        while ((begin_mode && (pillar_day < end_date)) || (!begin_mode && (pillar_day <= end_date)))
+        while ((start && (pillar_day < end_date)) || (!start && (pillar_day <= end_date)))
         {
             double count;
             switch (dc_convention)
@@ -301,11 +270,40 @@ public:
         return equivalent_rate(r, conv, c, other_convention, other_compound_times);
     }
 
+    DiscountFactor direct_discount(const Maturity& one, const Maturity& other);
+    InterestRate forward_rate(const Maturity& one, const Maturity& other);
+    DiscountFactor next_discount(const Maturity& one, const InterestRate& forward_rate, double m = 1.0);
+
 public:
     double r;  // annual rate
     int c;  // reinversions each year
     Convention conv;  // convention
 };
+
+DiscountFactor InterestRate::direct_discount(const Maturity& one, const Maturity& other)
+{
+    double df0 = to_discount_factor(one).df;
+    double df1 = to_discount_factor(other).df;
+
+    return DiscountFactor(df1 / df0);
+}
+
+InterestRate InterestRate::forward_rate(const Maturity& one, const Maturity& other)
+{
+    double df0 = to_discount_factor(one).df;
+    double df1 = to_discount_factor(other).df;
+
+    double m = other.value - one.value;
+
+    return InterestRate((df0 / df1 - 1.0) / m);
+}
+
+DiscountFactor InterestRate::next_discount(const Maturity& one, const InterestRate& forward_rate, double m)
+{
+    double discount = to_discount_factor(one).df;
+
+    return DiscountFactor(discount / (1.0 + m * forward_rate.r));
+}
 
 // TODO:
 class CashFlow
@@ -1025,19 +1023,19 @@ TEST_CASE("date C++20", "[date]")
     auto diff = (sys_days{ y } - sys_days{ x }).count();
     REQUIRE(diff == Catch::Approx(350));
 
-    auto start_date = jan / day(1) / 2020;
-    auto end_date = jan / day(1) / 2030;
+    auto start_date = jan / last / 2020;
+    auto end_date = jan / last / 2030;
     double last_maturity;
     for (auto d = start_date; d < end_date; d += months(1))
     {
         // ACT/ACT
-        int actual = (sys_days{ dec / day(31) / d.year() } - sys_days{ jan / day(1) / d.year() }).count();
+        int actual = (sys_days{ jan / day(1) / (d.year() + years(1)) } - sys_days{ jan / day(1) / d.year() }).count();
         double maturity = double((sys_days{ d } - sys_days{ start_date }).count()) / double(actual);
         std::cout << maturity << std::endl;
-        std::cout << d << ": " << to_present_value(1000, InterestRate(0.05), maturity) << std::endl;
+        std::cout << "for: " << d << " (dia " << d.day() << ")" << ": " << to_present_value(1000, InterestRate(0.05), maturity) << std::endl;
         last_maturity = maturity;
     }
-    REQUIRE(last_maturity == Catch::Approx(9.9505494505));
+    REQUIRE(last_maturity == Catch::Approx(9.9232876712));
     
     Calendar cal{start_date, end_date, 3, DayCountConvention::EQUALS };
 
@@ -1075,46 +1073,55 @@ TEST_CASE("forwards1", "[fw]")
     auto start_date = jan / day(1) / 2020;
     auto end_date = jan / day(1) / 2030;
 
-    Calendar cal{ start_date, end_date, 3, DayCountConvention::EQUALS };
-    auto dfs = cal.generate(false);
+    Calendar cal{ start_date, end_date, 12, DayCountConvention::EQUALS };
+    auto fixings = cal.generate(true);
 
     InterestRate r(0.08);
 
     double cash = 1;
 
-    double fwd2 = dfs[0].forward(cash, r, dfs[1]);
-    double fwd3 = dfs[1].forward(cash, r, dfs[2]);
+    double fwd2 = r.direct_discount(fixings[0], fixings[1]).df;
+    double fwd3 = r.direct_discount(fixings[1], fixings[2]).df;
+    double fwd4 = r.direct_discount(fixings[0], fixings[2]).df;
 
-    double fwr1 = dfs[0].forward_rate(cash, r, dfs[1]);
-    double fwr2 = dfs[1].forward_rate(cash, r, dfs[2]);
-    double fwr3 = dfs[2].forward_rate(cash, r, dfs[3]);
+    REQUIRE((fwd2) == Catch::Approx(0.9259259259));
+    REQUIRE((fwd3) == Catch::Approx(0.9259259259));
+    REQUIRE((fwd4) == Catch::Approx(0.9259259259 * 0.9259259259));
 
-    REQUIRE((fwr1) == Catch::Approx(0.0777061876));
-    REQUIRE((fwr2) == Catch::Approx(0.0777061876));
-    REQUIRE((fwr3) == Catch::Approx(0.0777061876));
+    double fwr1 = r.forward_rate(fixings[0], fixings[1]).to_other_interest_rate(Convention::YIELD, 12).r / 12.0;
+    double fwr2 = r.forward_rate(fixings[1], fixings[2]).r;
+    double fwr3 = r.forward_rate(fixings[2], fixings[3]).r;
 
-    REQUIRE(to_future_value(cash, r, dfs[0]) == Catch::Approx(1.0194265469083));
-    REQUIRE(to_future_value(cash, r, dfs[1]) == Catch::Approx(1.0392304845413));
-    REQUIRE(to_future_value(cash, r, dfs[2]) == Catch::Approx(1.0594191442978));
+    REQUIRE((fwr1) == Catch::Approx(0.0064340301));
+    REQUIRE((fwr2) == Catch::Approx(0.08));
+    REQUIRE((fwr3) == Catch::Approx(0.08));
+
+    REQUIRE(to_future_value(cash, r, fixings[0]) == Catch::Approx(1.0));
+    REQUIRE(to_future_value(cash, r, fixings[1]) == Catch::Approx(1.08));
+    REQUIRE(to_future_value(cash, r, fixings[2]) == Catch::Approx(1.1664));
     REQUIRE(to_future_value(cash, r, cal) == Catch::Approx(2.1589249972728));
 
-    REQUIRE((1.0392304845413 * fwd2) == Catch::Approx(1.0194265469));
-    REQUIRE((1.0594191442978 * fwd3) == Catch::Approx(1.0392304845413));
-    REQUIRE((1.0594191442978 * fwd2 * fwd3) == Catch::Approx(1.0194265469));
+    REQUIRE((1.08 * fwd2) == Catch::Approx(1.0));
+    REQUIRE((1.1664 * fwd3) == Catch::Approx(1.08));
+    REQUIRE((1.259712 * fwd2 * fwd3) == Catch::Approx(1.08));
 
-    REQUIRE(to_present_value(1.0194265469083, r, dfs[0]) == Catch::Approx(1.0));
-    REQUIRE(to_present_value(1.0392304845413, r, dfs[1]) == Catch::Approx(1.0));
-    REQUIRE(to_present_value(1.0594191442978, r, dfs[2]) == Catch::Approx(1.0));
+    REQUIRE(to_present_value(1.0, r, fixings[0]) == Catch::Approx(1.0));
+    REQUIRE(to_present_value(1.08, r, fixings[1]) == Catch::Approx(1.0));
+    REQUIRE(to_present_value(1.1664, r, fixings[2]) == Catch::Approx(1.0));
     REQUIRE(to_present_value(2.1589249972728, r, cal) == Catch::Approx(1.0));
 
-    double df0 = r.to_discount_factor(dfs[0]).df;
-    double df1 = r.to_discount_factor(dfs[1]).df;
+    double df0 = r.to_discount_factor(fixings[0]).df;
+    double df1 = r.to_discount_factor(fixings[1]).df;
+    double df2 = r.to_discount_factor(fixings[2]).df;
 
-    REQUIRE(df0 == Catch::Approx(0.9809436521));
-    REQUIRE(df1 == Catch::Approx(0.9622504486));
+    REQUIRE(df0 == Catch::Approx(1.0));
+    REQUIRE(df1 == Catch::Approx(0.9259259259));
+    REQUIRE(df2 == Catch::Approx(0.8573388203));
 
-    double cdf1 = dfs[0].next_discount(df0, fwr1, dfs[1]);
-    REQUIRE(cdf1 == Catch::Approx(df1));
+    REQUIRE(r.next_discount(fixings[1], InterestRate(fwr2), 1.0).df == Catch::Approx(r.direct_discount(fixings[0], fixings[2]).df));
+    REQUIRE(r.next_discount(fixings[1], InterestRate(fwr2), 1.0).to_interest_rate(fixings[1].value).r == Catch::Approx(0.1664));
 
-    // REQUIRE((1 * 0.0777061876 * 2) == Catch::Approx(2.1554123752));
+    REQUIRE(r.direct_discount(fixings[0], fixings[1]).to_interest_rate(fixings[1].value).r == Catch::Approx(0.08));
+    REQUIRE(r.direct_discount(fixings[1], fixings[2]).to_interest_rate(fixings[1].value).r == Catch::Approx(0.08));
+    REQUIRE(r.direct_discount(fixings[0], fixings[2]).to_interest_rate(fixings[1].value).r == Catch::Approx(0.1664));
 }
