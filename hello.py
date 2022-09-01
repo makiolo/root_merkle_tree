@@ -1,4 +1,5 @@
 import os
+import math
 import pandas as pd
 import numpy as np
 import seaborn as sns
@@ -7,10 +8,54 @@ import QuantLib as ql
 import pandas_ta as ta
 import yfinance as yf
 from datetime import datetime, timedelta
-from scipy.stats import norm, lognorm
 from arch import arch_model
 from arch.univariate import ConstantMean, GARCH, Normal, StudentsT, HARX
 from sklearn.metrics import mean_squared_error
+
+
+def pdf(x, m=0, v=1):
+    return math.exp(-((x - m) ** 2) / (2 * (v**2))) / (v * math.sqrt(2 * np.pi))
+
+
+def cdf(x, m=0, v=1):
+    return (math.erf((math.sqrt(2) * (x - m)) / (2 * v)) / 2) + 0.5
+
+
+def implied_vol(S, K, r, q, Vol_guess, T, market_price, flag='c', tol=0.00001, lr=10):
+    """Compute the implied volatility of a European Option
+        S0: initial stock price
+        K:  strike price
+        T:  maturity
+        r:  risk-free rate
+        market_price: market observed price
+        tol: user choosen tolerance
+    """
+    max_iter = 2000  #max number of iterations
+    vol_old = Vol_guess #initial guess
+    for k in range(max_iter):
+        if flag == 'c':
+            bs_price = BSMCall(S, K, r, q, vol_old, T)
+        else:
+            bs_price = BSMPut(S, K, r, q, vol_old, T)
+
+        # calculate vega
+        d_uno = d1(S, K, r, q, vol_old, T)
+        Cprime = (S * math.sqrt(T) * pdf(d_uno)) * lr
+
+        C = bs_price - market_price
+        vol_new = vol_old - C/Cprime
+        if vol_new < 0.0:
+            return vol_old
+        if flag == 'c':
+            bs_new = BSMCall(S, K, r, q, vol_new, T)
+        else:
+            bs_new = BSMPut(S, K, r, q, vol_new, T)
+        if abs(bs_new - market_price) < tol:
+            break
+        vol_old = vol_new
+
+    implied_vol = vol_old
+    return implied_vol
 
 
 def get_marketdata(ticker):
@@ -72,40 +117,46 @@ def d2(d1, Vol, T):
 def BSMCall(S, K, r, q, Vol, T):
     d_uno = d1(S, K, r, q, Vol, T)
     d_dos = d2(d_uno, Vol, T)
-    return (S * np.exp(-q * T) * norm.cdf(d_uno)) - (K * np.exp(-r * T) * norm.cdf(d_dos))
+    return (S * np.exp(-q * T) * cdf(d_uno)) - (K * np.exp(-r * T) * cdf(d_dos))
 
 def BSMPut(S, K, r, q, Vol, T):
     d_uno = d1(S, K, r, q, Vol, T)
     d_dos = d2(d_uno, Vol, T)
-    return (K * np.exp(-r * T) * norm.cdf(-d_dos)) - (S * np.exp(-q * T) * norm.cdf(-d_uno))
+    return (K * np.exp(-r * T) * cdf(-d_dos)) - (S * np.exp(-q * T) * cdf(-d_uno))
 
 def BSMCallGreeks(S, K, r, q, Vol, T):
     d_uno = d1(S, K, r, q, Vol, T)
     d_dos = d2(d_uno, Vol, T)
-    Delta = norm.cdf(d_uno)
-    Gamma = norm.pdf(d_uno) / (S * Vol * np.sqrt(T))
-    Theta = -(S * Vol * norm.pdf(d_uno)) / (2 * np.sqrt(T) - r*K*np.exp(-r*T)*norm.cdf(d_dos))
-    Vega = S * np.sqrt(T) * norm.pdf(d_uno)
-    Rho = K * T * np.exp(-r*T) * norm.cdf(d_dos)
+    Delta = cdf(d_uno)
+    Gamma = pdf(d_uno) / (S * Vol * np.sqrt(T))
+    Theta = -(S * Vol * pdf(d_uno)) / (2 * np.sqrt(T) - r*K*np.exp(-r*T) * cdf(d_dos))
+    Vega = S * np.sqrt(T) * pdf(d_uno)
+    Rho = K * T * np.exp(-r*T) * cdf(d_dos)
     return Delta, Gamma, Theta, Vega , Rho
 
 def BSMPutGreeks(S, K, r, q, Vol, T):
     d_uno = d1(S, K, r, q, Vol, T)
     d_dos = d2(d_uno, Vol, T)
-    Delta = norm.cdf(-d_uno)
-    Gamma = norm.pdf(d_uno) / (S * Vol * np.sqrt(T))
-    Theta = -(S*Vol*norm.pdf(d_uno)) / (2*np.sqrt(T))+ r*K * np.exp(-r*T) * norm.cdf(-d_uno)
-    Vega = S * np.sqrt(T) * norm.pdf(d_uno)
-    Rho = -K*T*np.exp(-r*T) * norm.cdf(-d_dos)
+    Delta = cdf(-d_uno)
+    Gamma = pdf(d_uno) / (S * Vol * np.sqrt(T))
+    Theta = -(S*Vol*pdf(d_uno)) / (2*np.sqrt(T))+ r*K * np.exp(-r*T) * cdf(-d_uno)
+    Vega = S * np.sqrt(T) * pdf(d_uno)
+    Rho = -K*T*np.exp(-r*T) * cdf(-d_dos)
     return Delta, Gamma, Theta, Vega, Rho
+
 
 if __name__ == '__main__':
     df_free, _ = get_marketdata('^tnx')
 
-    df_sp500 = pd.read_csv('sp500.csv')
-    tickers = []
-    for index, row in df_sp500.iterrows():
-        tickers.append(row['Ticker'])
+    # df_sp500 = pd.read_csv('sp500.csv')
+    # tickers = []
+    # for index, row in df_sp500.iterrows():
+    #     tickers.append(row['Ticker'])
+    tickers = ['TSLA', ]
+    call_market_price = 0.02
+    put_market_price = 27.93
+    tol = 0.5
+    strike_price = 305
 
     scheme = ['name', 'dividends',
               'quantlib_call', 'quantlib_put', 'bsm_call', 'bsm_put', 'mc_call', 'mc_put',
@@ -198,13 +249,13 @@ if __name__ == '__main__':
             steps = periods  # time steps
             N = 10000  # number of trials
             r = df_free.Close[-1] / 100.0
-            nominal = 10
-            K = S
-            print(f'<{ticker}>: price: {S}, volatility: {100.0*sigma}, risk_free: {100.0*r}, dividend: {100.0*q}.')
+            nominal = 1
+            K = strike_price
+            print(f'<{ticker}>: price: {S}, strike: {K} volatility (historic): {100.0*sigma}, risk_free: {100.0*r}, dividend: {100.0*q}.')
 
             paths = geo_paths(S, T, q, sigma, steps, N, r)
 
-            forecasts = res.forecast(horizon=3, reindex=False, simulations=2)
+            # forecasts = res.forecast(horizon=3, reindex=False, simulations=2)
             # print('-- mean --')
             # print(forecasts.mean)
             # print('-- residual variance --')
@@ -224,11 +275,11 @@ if __name__ == '__main__':
             '''
 
             # view paths
-            plt.plot(paths)
-            plt.xlabel("Time Increments")
-            plt.ylabel("Stock Price")
-            plt.title("Geometric Brownian Motion")
-            plt.show()
+            # plt.plot(paths)
+            # plt.xlabel("Time Increments")
+            # plt.ylabel("Stock Price")
+            # plt.title("Geometric Brownian Motion")
+            # plt.show()
 
             # ultima columna de resultados
             last = paths[-1]
@@ -244,6 +295,15 @@ if __name__ == '__main__':
             # traer a presente con interes compuesto continuo
             call_option_price = mean_positive_payoffs * np.exp(-r * T)  # discounting back to present value
             put_option_price = -mean_negative_payoffs * np.exp(-r * T)  # discounting back to present value
+
+            print(f"Montecarlo CALL option price is {call_option_price * nominal}")
+            print(f"Montecarlo PUT option price is {put_option_price * nominal}")
+
+            implied_vol_call = implied_vol(S, K, r, q, sigma, T, call_market_price, flag='c', tol=tol)
+            print("Montecarlo CALL implied vol is ", implied_vol_call)
+
+            implied_vol_put = implied_vol(S, K, r, q, sigma, T, put_market_price, flag='p', tol=tol)
+            print("Montecarlo PUT implied vol is ", implied_vol_put)
 
             ############################
 
@@ -282,6 +342,9 @@ if __name__ == '__main__':
             bs_price = european_option_call.NPV() * nominal
             print("Quantlib CALL option price is ", bs_price)
             row.append(bs_price)
+            implied_vol_call = implied_vol(S, K, r, q, sigma, T, call_market_price, flag='c', tol=tol)
+            print("Quantlib CALL implied vol is ", implied_vol_call)
+
 
             # construct the European Option
             payoff = ql.PlainVanillaPayoff(ql.Option.Put, K)
@@ -291,12 +354,11 @@ if __name__ == '__main__':
             bs_price = european_option_put.NPV() * nominal
             print("Quantlib PUT option price is ", bs_price)
             row.append(bs_price)
-
+            implied_vol_put = implied_vol(S, K, r, q, sigma, T, put_market_price, flag='p', tol=tol)
+            print("Quantlib PUT implied vol is ", implied_vol_put)
 
             print(f"Black Scholes CALL option price is {BSMCall(S, K, r, q, sigma, T) * nominal}")
             print(f"Black Scholes PUT option price is {BSMPut(S, K, r, q, sigma, T) * nominal}")
-            print(f"Montecarlo CALL option price is {call_option_price * nominal}")
-            print(f"Montecarlo PUT option price is {put_option_price * nominal}")
             row.append(BSMCall(S, K, r, q, sigma, T) * nominal)
             row.append(BSMPut(S, K, r, q, sigma, T) * nominal)
             row.append(call_option_price * nominal)
@@ -355,3 +417,5 @@ if __name__ == '__main__':
 
     result = pd.DataFrame(dataset, columns=scheme)
     result.to_csv('result.csv')
+    
+    
