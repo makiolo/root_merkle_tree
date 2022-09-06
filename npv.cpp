@@ -9,7 +9,7 @@
 // date algorithms: http://howardhinnant.github.io/date_algorithms.html
 // date doc: https://howardhinnant.github.io/date.html
 #include "date.h"
-#include "rapidcsv.h"
+//#include "rapidcsv.h"
 
 namespace qs {
 
@@ -45,37 +45,37 @@ namespace qs {
         EQUALS,
     };
 
-// convert value and zc
+    // convert value and zc
     double df2zc(double df, double maturity, Convention conv = Convention::YIELD, int compound_times = Frequency::ANNUAL);
     double zc2df(double zc, double maturity, Convention conv = Convention::YIELD, int compound_times = Frequency::ANNUAL);
     InterestRate equivalent_rate(double rate, Convention conv, int compound_times, Convention other_convention = Convention::YIELD, int other_compound_times = Frequency::ANNUAL);
     InterestRate equivalent_rate(double rate, int compound_times, int other_compound_times = Frequency::ANNUAL);
 
-// one cash flow
+    // one cash flow
     double to_present_value(double cash, const InterestRate& r, const Maturity& maturity);
     double to_future_value(double cash, const InterestRate& r, const Maturity& maturity);
     double to_present_value(double cash, const InterestRate& r, const Schedule& cal);
     double to_future_value(double cash, const InterestRate& r, const Schedule& cal);
 
-// fv - coupon - fv
+    // fv - coupon - fv
     double npv_from_coupon(double coupon, const InterestRate& interest_rate, const Schedule& cal);
     double coupon_from_npv(double npv, const InterestRate& interest_rate, const Schedule& cal);
     double coupon_from_fv(double fv, const InterestRate& interest_rate, const Schedule& cal);
     double fv_from_coupon(double coupon, const InterestRate& interest_rate, const Schedule& cal);
 
-// growth_coupon
+    // growth_coupon
     double npv_from_growth_coupon(double coupon, const InterestRate& growth_rate, const InterestRate& interest_rate, const Schedule& cal);
     double fv_from_growth_coupon(double coupon, const InterestRate& growth_rate, const InterestRate& interest_rate, const Schedule& cal);
     double coupon_from_growth_coupon(double coupon, const InterestRate& growth_rate, const InterestRate& interest_rate, const Schedule& cal);
 
-/*
-growth_coupon_from_npv
-growth_coupon_from_coupon
-grouth_coupon_from_fv
-*/
+    /*
+    growth_coupon_from_npv
+    growth_coupon_from_coupon
+    grouth_coupon_from_fv
+    */
     double compute_irr(const std::vector<double>& cf, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
 
-// value products
+    // value products
     double classic_npv(double investment, double coupon, const InterestRate& interest_rate, const Schedule& cal);
     double bond_npv(double face_value, double coupon, const InterestRate& interest_rate, const Schedule& cal);
     double stock_npv(double investment, double dividend, const InterestRate& interest_rate, const Schedule& cal);
@@ -85,16 +85,16 @@ grouth_coupon_from_fv
     {
     public:
         Maturity(double value_)
-                : value(value_)
-                , has_pillar(false)
+            : value(value_)
+            , has_pillar(false)
         {
             ;
         }
 
         explicit Maturity(const date::year_month_day& pillar_, double value_)
-                : pillar(pillar_)
-                , value(value_)
-                , has_pillar(true)
+            : pillar(pillar_)
+            , value(value_)
+            , has_pillar(true)
         {
             ;
         }
@@ -132,7 +132,7 @@ grouth_coupon_from_fv
     const Maturity Maturity::ONE(1.0);
 
 
-// calcular value
+    // calcular value
     InterestRate on_capital(double initial_value, double final_value, const Maturity& maturity = Maturity::ONE, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
 
 
@@ -140,8 +140,8 @@ grouth_coupon_from_fv
     {
     public:
         Period(const Maturity& start_, const Maturity& end_)
-                : start(start_)
-                , end(end_)
+            : start(start_)
+            , end(end_)
         {
 
         }
@@ -180,19 +180,19 @@ grouth_coupon_from_fv
         DayCountConvention dc_convention;
 
         Schedule(const date::year_month_day& start_date_, const date::year_month_day& end_date_, int tenor_ = 12, DayCountConvention dc_convention_ = DayCountConvention::EQUALS)
-                : start_date(start_date_)
-                , end_date(end_date_)
-                , tenor(tenor_)
-                , dc_convention(dc_convention_)
+            : start_date(start_date_)
+            , end_date(end_date_)
+            , tenor(tenor_)
+            , dc_convention(dc_convention_)
         {
 
         }
 
         Schedule(const date::year_month_day& start_date_, int duration, int tenor_ = 12, DayCountConvention dc_convention_ = DayCountConvention::EQUALS)
-                : start_date(start_date_)
-                , end_date(start_date_ + date::years(duration))
-                , tenor(tenor_)
-                , dc_convention(dc_convention_)
+            : start_date(start_date_)
+            , end_date(start_date_ + date::years(duration))
+            , tenor(tenor_)
+            , dc_convention(dc_convention_)
         {
 
         }
@@ -215,32 +215,32 @@ grouth_coupon_from_fv
                 prev = count;
                 switch (dc_convention)
                 {
-                    case DayCountConvention::ACT_ACT:
-                    {
-                        double m = double((sys_days{ jan / day(1) / (pillar_day.year() + years(1)) } - sys_days{ jan / day(1) / pillar_day.year() }).count());
-                        count = double((sys_days{ pillar_day } - sys_days{ start_date }).count()) / m;
-                        break;
-                    }
-                    case DayCountConvention::ACT_365:
-                    {
-                        count = double((sys_days{ pillar_day } - sys_days{ start_date }).count()) / 365.0;
-                        break;
-                    }
-                    case DayCountConvention::EQUALS:
-                    {
-                        count = double(i) / (12.0 / tenor);
-                        break;
-                    }
-                    case DayCountConvention::ACT_360:
-                    default:
-                    {
-                        count = double((sys_days{ pillar_day } - sys_days{ start_date }).count()) / 360.0;
-                        break;
-                    }
+                case DayCountConvention::ACT_ACT:
+                {
+                    double m = double((sys_days{ jan / day(1) / (pillar_day.year() + years(1)) } - sys_days{ jan / day(1) / pillar_day.year() }).count());
+                    count = double((sys_days{ pillar_day } - sys_days{ start_date }).count()) / m;
+                    break;
                 }
-                auto start = Maturity( pillar_day, prev);
+                case DayCountConvention::ACT_365:
+                {
+                    count = double((sys_days{ pillar_day } - sys_days{ start_date }).count()) / 365.0;
+                    break;
+                }
+                case DayCountConvention::EQUALS:
+                {
+                    count = double(i) / (12.0 / tenor);
+                    break;
+                }
+                case DayCountConvention::ACT_360:
+                default:
+                {
+                    count = double((sys_days{ pillar_day } - sys_days{ start_date }).count()) / 360.0;
+                    break;
+                }
+                }
+                auto start = Maturity(pillar_day, prev);
                 pillar_day += months(tenor);
-                auto end = Maturity( pillar_day, count );
+                auto end = Maturity(pillar_day, count);
                 data.emplace_back(start, end);
                 i += 1;
             }
@@ -264,7 +264,7 @@ grouth_coupon_from_fv
     {
     public:
         explicit DiscountFactor(double value_)
-                : value(value_)
+            : value(value_)
         {
             ;
         }
@@ -289,9 +289,9 @@ grouth_coupon_from_fv
     {
     public:
         explicit InterestRate(double value_, Convention convention_ = Convention::YIELD, int compound_times_ = 1)
-                : value(value_)
-                , conv(convention_)
-                , c(compound_times_)
+            : value(value_)
+            , conv(convention_)
+            , c(compound_times_)
         {
             ;
         }
@@ -313,8 +313,8 @@ grouth_coupon_from_fv
         bool operator==(const InterestRate& rhs) const
         {
             return value == rhs.value &&
-                   c == rhs.c &&
-                   conv == rhs.conv;
+                c == rhs.c &&
+                conv == rhs.conv;
         }
 
         [[nodiscard]] std::vector<DiscountFactor> get_discount_factor_start(const Schedule& cal) const
@@ -409,9 +409,9 @@ grouth_coupon_from_fv
     {
     public:
         explicit CashFlow(const Schedule& cal_, const InterestRate& ir_, double cash_)
-                : cal(cal_)
-                , ir(ir_)
-                , cash(cash_)
+            : cal(cal_)
+            , ir(ir_)
+            , cash(cash_)
         {
             ;
         }
@@ -431,8 +431,8 @@ grouth_coupon_from_fv
     {
     public:
         CouponCashFlow(const Schedule& cal_, const InterestRate& ir_, double cash_, const InterestRate& growth_ = InterestRate::ZERO)
-                : CashFlow(cal_, ir_, cash_)
-                , growth(growth_)
+            : CashFlow(cal_, ir_, cash_)
+            , growth(growth_)
         {
 
         }
@@ -448,7 +448,7 @@ grouth_coupon_from_fv
     {
     public:
         StartCashFlow(const Schedule& cal_, const InterestRate& ir_, double cash_)
-                : CashFlow(cal_, ir_, cash_)
+            : CashFlow(cal_, ir_, cash_)
         {
             ;
         }
@@ -473,7 +473,7 @@ grouth_coupon_from_fv
     {
     public:
         EndCashFlow(const Schedule& cal_, const InterestRate& ir_, double cash_)
-                : CashFlow(cal_, ir_, cash_)
+            : CashFlow(cal_, ir_, cash_)
         {
             ;
         }
@@ -502,8 +502,8 @@ grouth_coupon_from_fv
     {
     public:
         CustomCashFlow(const Schedule& cal_, const InterestRate& ir_, double cash_, const Maturity& maturity_)
-                : CashFlow(cal_, ir_, cash_)
-                , maturity(maturity_)
+            : CashFlow(cal_, ir_, cash_)
+            , maturity(maturity_)
         {
             ;
         }
@@ -549,20 +549,20 @@ grouth_coupon_from_fv
         auto cash2 = to_future_value(cash, ir, cal);
         return EndCashFlow{ cal, ir, cash2 };
     }
-// ********************** //
+    // ********************** //
 
     double df2zc(double df, double maturity, Convention conv, int compound_times)
     {
         switch (conv)
         {
-            case Convention::LINEAR:
-                return (1.0 / df - 1.0) * (1.0 / maturity);
-            case Convention::YIELD:
-                return (pow(1.0 / df, 1.0 / (maturity * compound_times)) - 1.0) * compound_times;
-            case Convention::EXPONENTIAL:
-                return -log(df) / maturity;
-            default:
-                throw std::runtime_error("Invalid convention");
+        case Convention::LINEAR:
+            return (1.0 / df - 1.0) * (1.0 / maturity);
+        case Convention::YIELD:
+            return (pow(1.0 / df, 1.0 / (maturity * compound_times)) - 1.0) * compound_times;
+        case Convention::EXPONENTIAL:
+            return -log(df) / maturity;
+        default:
+            throw std::runtime_error("Invalid convention");
         }
     }
 
@@ -570,14 +570,14 @@ grouth_coupon_from_fv
     {
         switch (conv)
         {
-            case Convention::LINEAR:
-                return 1.0 / (1.0 + zc * maturity);
-            case Convention::YIELD:
-                return 1.0 / (pow((1.0 + zc / compound_times), maturity * compound_times));
-            case Convention::EXPONENTIAL:
-                return exp(-zc * maturity);
-            default:
-                throw std::runtime_error("Invalid convention");
+        case Convention::LINEAR:
+            return 1.0 / (1.0 + zc * maturity);
+        case Convention::YIELD:
+            return 1.0 / (pow((1.0 + zc / compound_times), maturity * compound_times));
+        case Convention::EXPONENTIAL:
+            return exp(-zc * maturity);
+        default:
+            throw std::runtime_error("Invalid convention");
         }
     }
 
@@ -642,8 +642,8 @@ grouth_coupon_from_fv
     InterestRate equivalent_rate(double rate, Convention convention, int compound_times, Convention other_convention, int other_compound_times)
     {
         return InterestRate(rate, convention, compound_times)
-                .to_discount_factor(Maturity(1.0))
-                .to_interest_rate(1.0, other_convention, other_compound_times);
+            .to_discount_factor(Maturity(1.0))
+            .to_interest_rate(1.0, other_convention, other_compound_times);
     }
 
     InterestRate equivalent_rate(double rate, int compound_times, int other_compound_times)
@@ -651,33 +651,33 @@ grouth_coupon_from_fv
         return equivalent_rate(rate, Convention::YIELD, compound_times, Convention::YIELD, other_compound_times);
     }
 
-// tenemos un cash en "maturity" y nos lo traemos a "0"
+    // tenemos un cash en "maturity" y nos lo traemos a "0"
     double to_present_value(double cash, const InterestRate& r, const Maturity& maturity)
     {
         return cash * r.to_discount_factor(maturity).value;
     }
 
-// tenemos un cash en "0" y nos lo traemos a "maturity"
+    // tenemos un cash en "0" y nos lo traemos a "maturity"
     double to_future_value(double cash, const InterestRate& r, const Maturity& maturity)
     {
         return cash / r.to_discount_factor(maturity).value;
     }
 
-// tenemos un cash al final del calendario y nos lo traemos a "0"
+    // tenemos un cash al final del calendario y nos lo traemos a "0"
     double to_present_value(double cash, const InterestRate& r, const Schedule& cal)
     {
         auto maturity = cal.get_last_period().end; // obtener maturity del cash (teniendo cierto "cal")
         return to_present_value(cash, r, maturity);
     }
 
-// tenemos un en 0 y nos lo traemos al final del calendario
+    // tenemos un en 0 y nos lo traemos al final del calendario
     double to_future_value(double cash, const InterestRate& r, const Schedule& cal)
     {
         auto maturity = cal.get_last_period().end; // obtener maturity del cash (teniendo cierto "cal")
         return to_future_value(cash, r, maturity);
     }
 
-// only coupons
+    // only coupons
     double npv_from_coupon(double coupon, const InterestRate& interest_rate, const Schedule& cal)
     {
         return npv_from_growth_coupon(coupon, InterestRate::ZERO, interest_rate, cal);
@@ -717,13 +717,13 @@ grouth_coupon_from_fv
         return (npv * interest_rate.c) / total_df;
     }
 
-// VAN = coupons - initial investement
+    // VAN = coupons - initial investement
     double classic_npv(double investment, double coupon, const InterestRate& interest_rate, const Schedule& cal)
     {
         return CouponCashFlow(cal, interest_rate, coupon).to_start_cashflow().cash - investment;
     }
 
-// coupons + payment on yield-maturity
+    // coupons + payment on yield-maturity
     double bond_npv(double face_value, double coupon, const InterestRate& interest_rate, const Schedule& cal)
     {
         double coupons = CouponCashFlow(cal, interest_rate, coupon).to_start_cashflow().cash;
@@ -731,7 +731,7 @@ grouth_coupon_from_fv
         return coupons + yield_on_payment;
     }
 
-// stock investment = coupons + payment on yield-maturity - initial investement
+    // stock investment = coupons + payment on yield-maturity - initial investement
     double stock_npv(double investment, double dividend, const InterestRate& interest_rate, const Schedule& cal)
     {
         double coupon = investment * (dividend - interest_rate.value);
@@ -767,8 +767,8 @@ grouth_coupon_from_fv
         else
         {
             return InterestRate((final_value - initial_value) / initial_value, Convention::LINEAR)
-                    .to_discount_factor(Maturity(1.0))
-                    .to_interest_rate(maturity, convention, compound_times);
+                .to_discount_factor(Maturity(1.0))
+                .to_interest_rate(maturity, convention, compound_times);
         }
     }
 
@@ -780,13 +780,13 @@ grouth_coupon_from_fv
         // valor presente de un bono
         // valorar un bono que da un yield "seguro" haciendo otros proyectos risk free
         double npv = bond_npv(
-                // face value
-                16000,
-                // cupon
-                100,
-                InterestRate(0.06),
-                // calendar
-                Schedule(2022_y / 1 / 1, 20));
+            // face value
+            16000,
+            // cupon
+            100,
+            InterestRate(0.06),
+            // calendar
+            Schedule(2022_y / 1 / 1, 20));
 
         REQUIRE(npv == Catch::Approx(6135.87));
     }
@@ -890,7 +890,7 @@ grouth_coupon_from_fv
         double r_anual = equivalent_rate(r, 12, 1).value;
         double years = 3.0;
         REQUIRE(to_future_value(initial, InterestRate(r, Convention::YIELD, 12), years) == \
-        Catch::Approx(to_future_value(initial, InterestRate(r_anual), years)));
+            Catch::Approx(to_future_value(initial, InterestRate(r_anual), years)));
     }
 
     TEST_CASE("value & zc", "[fv]") {
@@ -937,14 +937,14 @@ grouth_coupon_from_fv
         REQUIRE(coupon_from_npv(npv, InterestRate(r), cal) == Catch::Approx(5000));
 
         REQUIRE(classic_npv(
-                // inversion
-                6000,
-                // cuota
-                500,
-                // free risk rate
-                InterestRate(0.01),
-                // years
-                Schedule(2022_y / 1 / 1, 1)) == Catch::Approx(-5504.9504950495));
+            // inversion
+            6000,
+            // cuota
+            500,
+            // free risk rate
+            InterestRate(0.01),
+            // years
+            Schedule(2022_y / 1 / 1, 1)) == Catch::Approx(-5504.9504950495));
 
         double npv1 = classic_npv(1000, 100, InterestRate(-0.1940185202), Schedule(2022_y / 1 / 1, 6));
         REQUIRE(npv1 == Catch::Approx(364.7956282082));
@@ -1073,9 +1073,9 @@ grouth_coupon_from_fv
         // cupon from growth cupon
 
         double fixed_coupon = coupon_from_growth_coupon(1000,
-                                                        InterestRate(0.05, Convention::YIELD, 12),
-                                                        InterestRate(0.08, Convention::YIELD, 12),
-                                                        cal);
+            InterestRate(0.05, Convention::YIELD, 12),
+            InterestRate(0.08, Convention::YIELD, 12),
+            cal);
         REQUIRE(fixed_coupon == Catch::Approx(5649.6802745071));
 
         // fv
@@ -1324,8 +1324,72 @@ Leg1Calendar	NY		Leg2BusinessCalendar	NY
 Leg1BusinessDayConvention	Following		Leg2BusinessDayConvention	Following
 Leg1DayCountConvention	Thirty360		Leg2DayCountConvention	ACT365
 FxdNotional	10000000		FltNotional	-10000000
-        
+
          */
+
+        // Deposits
+
+        double cumyear0 = 0.002777778;
+        double swaprate0 = 0.0003;
+        double zerorate0 = (1.0 / cumyear0) * log(1.0 + swaprate0 * cumyear0);
+        REQUIRE(zerorate0 == Catch::Approx(0.0003));
+        REQUIRE(zerorate0 == Catch::Approx(InterestRate(swaprate0, Convention::LINEAR).to_discount_factor(Maturity(cumyear0)).to_interest_rate(cumyear0, Convention::EXPONENTIAL).value));
+
+        double cumyear1 = 0.019444444;
+        double swaprate1 = 0.000724;
+        double zerorate1 = (1.0 / cumyear1) * log(1.0 + swaprate1 * cumyear1);
+        REQUIRE(zerorate1 == Catch::Approx(0.000723995));
+        REQUIRE(zerorate1 == Catch::Approx(InterestRate(swaprate1, Convention::LINEAR).to_discount_factor(Maturity(cumyear1)).to_interest_rate(cumyear1, Convention::EXPONENTIAL).value));
+
+        double cumyear_1y = 1.013888889;
+        double swaprate_1y = 0.0028375;
+        double zerorate_1y = (1.0 / cumyear_1y) * log(1.0 + swaprate_1y * cumyear_1y);
+        REQUIRE(zerorate_1y == Catch::Approx(0.002833426));
+        REQUIRE(zerorate_1y == Catch::Approx(InterestRate(swaprate_1y, Convention::LINEAR).to_discount_factor(Maturity(cumyear_1y)).to_interest_rate(cumyear_1y, Convention::EXPONENTIAL).value));
+
+        // Futures
+        double zerorate_2y_prev = 0.003117122;
+        double cumyear_2y_prev = 1.777777778;
+        double dcf_2y = 0.25;
+        double cumyear_2y = 2.027777778;
+        double swaprate_2y = 0.003641;
+        /*
+        R_eurofut_continuous = 4 × ln[(1 + R_quarterly × YF)]
+        R_continuous = (R_eurofut_continuous × YF + R_continuous_t-1 × CYF_t-1) / CYF
+        */
+        double r_continuous_2y = 4.0 * log(1 + swaprate_2y * dcf_2y);
+        double zerorate_2y = (r_continuous_2y * dcf_2y + zerorate_2y_prev * cumyear_2y_prev) / cumyear_2y;
+        REQUIRE(zerorate_2y == Catch::Approx(0.003181505));
+        REQUIRE(r_continuous_2y == Catch::Approx(InterestRate(swaprate_2y, Convention::YIELD, Frequency::QUATERLY).to_discount_factor(Maturity(cumyear_2y)).to_interest_rate(cumyear_2y, Convention::EXPONENTIAL).value));
+
+        // Swaps
+        double dcf_10y = 3.044444444;
+        double zerorate_10y_prev = 0.011558032;
+        double cumyear_10y_prev = 7.102777778;
+        double cumyear_10y = 10.14722222;
+        double swaprate_10y = 0.01468;
+
+        double sumproduct = 0.0;
+        /*
+5Y	Swap	S	ACT360	0.00823	2026-04-20	1.011111111	5.072222222	0.008125758
+7Y	Swap	S	ACT360	0.01155	2028-04-20	2.030555556	7.102777778	0.011558032
+10Y	Swap	S	ACT360	0.01468	2031-04-21	3.044444444	10.14722222	0.013906471
+15Y	Swap	S	ACT360	0.01729	2036-04-21	5.075	15.22222222	0.023043104
+30Y	Swap	S	ACT360	0.01877	2051-04-20	15.21388889	30.43611111	0.011799239
+        */
+        sumproduct += 0.00823 * exp(-0.008125758 * 1.011111111);
+        sumproduct += 0.01155 * exp(-0.011558032 * 2.030555556);
+
+        // 0.014626386588449164
+        // double r_continuous_10y = InterestRate(swaprate_10y, Convention::YIELD, Frequency::SEMIANNUAL).to_discount_factor(Maturity(cumyear_10y)).to_interest_rate(cumyear_10y, Convention::EXPONENTIAL).value;
+
+        double zerorate_10y = -1.0 * log((1.0 - sumproduct) / (1.0 + (swaprate_10y / 2.0))) / cumyear_10y;
+
+        REQUIRE(zerorate_10y == Catch::Approx(0.013906471));
+        // REQUIRE(zerorate_10y == Catch::Approx(InterestRate(swaprate_10y, Convention::LINEAR).to_discount_factor(Maturity(cumyear_10y)).to_interest_rate(cumyear_10y, Convention::EXPONENTIAL).value));
+        // 
+        // 0.014626386588449164
+
     }
 
 }
