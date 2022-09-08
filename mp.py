@@ -58,20 +58,6 @@ def process_parallel(generator, processor, chunk_each, num_process, *args, **kwa
     return [item for sublist in results for item in sublist]
 
 
-class UploadData:
-    def __init__(self, data_source, market_il, market_id, market_type, curves_set,
-                 upload_postgres, generate_csv, output_fullpath, async_req):
-        self.data_source = data_source
-        self.market_il = market_il
-        self.market_id = market_id
-        self.market_type = market_type
-        self.curves_set = curves_set
-        self.upload_postgres = upload_postgres
-        self.generate_csv = generate_csv
-        self.output_fullpath = output_fullpath
-        self.async_req = async_req
-
-
 if __name__ == '__main__':
 
     begin = time.time()
