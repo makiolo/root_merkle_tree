@@ -13,9 +13,11 @@
 
 namespace qs {
 
+    using namespace date;
+
     class DiscountFactor;
     class Maturity;
-    class Period;
+    class ForwardPeriod;
     class Schedule;
     class InterestRate;
     class CashFlow;
@@ -86,21 +88,21 @@ namespace qs {
     {
     public:
         Maturity(double value_)
-            : value(value_)
-            , has_pillar(false)
+                : value(value_)
+                , has_pillar(false)
         {
             ;
         }
 
         explicit Maturity(const date::year_month_day& pillar_, double value_)
-            : pillar(pillar_)
-            , value(value_)
-            , has_pillar(true)
+                : pillar(pillar_)
+                , value(value_)
+                , has_pillar(true)
         {
             ;
         }
 
-        [[nodiscard]] Period to(const Maturity& target) const;
+        [[nodiscard]] ForwardPeriod to(const Maturity& target) const;
         [[nodiscard]] DiscountFactor get_discount_factor(const InterestRate& ir) const;
 
         bool operator>(const Maturity& rhs) const
@@ -127,9 +129,11 @@ namespace qs {
         date::year_month_day pillar;
         double value;
 
+        static const Maturity ZERO;
         static const Maturity ONE;
     };
 
+    const Maturity Maturity::ZERO(0.0);
     const Maturity Maturity::ONE(1.0);
 
 
@@ -137,35 +141,39 @@ namespace qs {
     InterestRate on_capital(double initial_value, double final_value, const Maturity& maturity = Maturity::ONE, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
 
 
-    class Period
+    class ForwardPeriod
     {
     public:
-        Period(const Maturity& start_, const Maturity& end_)
-            : start(start_)
-            , end(end_)
+        ForwardPeriod(const Maturity& start_, const Maturity& end_)
+                : start(start_)
+                , end(end_)
         {
 
         }
 
         [[nodiscard]] DiscountFactor discount_factor(const InterestRate& ir) const;
+        [[nodiscard]] DiscountFactor discount_factor(const InterestRate& ir_start, const InterestRate& ir_end) const;
         [[nodiscard]] InterestRate forward_rate(const InterestRate& ir) const;
-        [[nodiscard]] DiscountFactor next_discount_factor(const InterestRate& interest_rate) const;
-
-        Maturity lerp(double factor) const
-        {
-            // TODO: implement local interpolation
-            return start;
-        }
-
-        // algebra de Periods ?
+        [[nodiscard]] InterestRate forward_rate(const InterestRate& ir_start, const InterestRate& ir_end) const;
+        [[nodiscard]] DiscountFactor next_discount_factor(const InterestRate& ir) const;
 
         Maturity start;
         Maturity end;
     };
 
-    [[nodiscard]] Period Maturity::to(const Maturity& target) const
+    class ZeroPeriod : public ForwardPeriod
     {
-        return Period(*this, target);
+    public:
+        explicit ZeroPeriod(const Maturity& end)
+            : ForwardPeriod(Maturity::ZERO, end)
+        {
+
+        }
+    };
+
+    [[nodiscard]] ForwardPeriod Maturity::to(const Maturity& target) const
+    {
+        return {*this, target};
     }
 
     std::ostream& operator<<(std::ostream& out, const Maturity& obj)
@@ -181,7 +189,7 @@ namespace qs {
         return out;
     }
 
-    std::ostream& operator<<(std::ostream& out, const Period& obj)
+    std::ostream& operator<<(std::ostream& out, const ForwardPeriod& obj)
     {
         out << "From period:\t" << obj.start << "\tTo period:\t" << obj.end;
         return out;
@@ -200,48 +208,48 @@ namespace qs {
         DayCountConvention dc_convention;
 
         Schedule(const date::year_month_day& start_date_, const date::year_month_day& end_date_, int tenor_ = 12, DayCountConvention dc_convention_ = DayCountConvention::EQUALS)
-            : start_date(start_date_)
-            , end_date(end_date_)
-            , tenor(tenor_)
-            , dc_convention(dc_convention_)
-            , periods(build())
+                : start_date(start_date_)
+                , end_date(end_date_)
+                , tenor(tenor_)
+                , dc_convention(dc_convention_)
         {
-            
+            build();
         }
 
         Schedule(const date::year_month_day& start_date_, int duration, int tenor_ = 12, DayCountConvention dc_convention_ = DayCountConvention::EQUALS)
-            : start_date(start_date_)
-            , end_date(start_date_ + date::years(duration))
-            , tenor(tenor_)
-            , dc_convention(dc_convention_)
-            , periods(build())
+                : start_date(start_date_)
+                , end_date(start_date_ + date::years(duration))
+                , tenor(tenor_)
+                , dc_convention(dc_convention_)
         {
-            
+            build();
         }
 
-        [[nodiscard]] const std::vector<Period>& get() const
+        [[nodiscard]] const std::vector<ForwardPeriod>& get() const
         {
-            return periods;
+            return forward_periods;
         }
 
-        [[nodiscard]] Period get_first_period() const
+        [[nodiscard]] ForwardPeriod get_first_period() const
         {
-            auto mats = periods;
+            auto mats = forward_periods;
             return mats.front();
         }
 
-        [[nodiscard]] Period get_last_period() const
+        [[nodiscard]] ForwardPeriod get_last_period() const
         {
-            auto mats = periods;
+            auto mats = forward_periods;
             return mats.back();
         }
 
+        [[nodiscard]] std::vector<InterestRate> spot_to_forward(const std::vector<InterestRate>& spots) const;
+
     protected:
-        [[nodiscard]] std::vector<Period> build() const
+        void build()
         {
             using namespace date;
 
-            std::vector<Period> data;
+            std::vector<ForwardPeriod> data;
             auto pillar_day = start_date;
             int i = 0;
             double prev = 0.0, count = 0.0;
@@ -255,47 +263,48 @@ namespace qs {
                 prev = count;
                 switch (dc_convention)
                 {
-                case DayCountConvention::ACT_ACT:
-                {
-                    double m = double((sys_days{ jan / day(1) / (pillar_day.year() + years(1)) } - sys_days{ jan / day(1) / pillar_day.year() }).count());
-                    count = double((sys_days{ pillar_day } - sys_days{ start_date }).count()) / m;
-                    break;
-                }
-                case DayCountConvention::ACT_365:
-                {
-                    count = double((sys_days{ pillar_day } - sys_days{ start_date }).count()) / 365.0;
-                    break;
-                }
-                case DayCountConvention::EQUALS:
-                {
-                    count = double(i) / (12.0 / tenor);
-                    break;
-                }
-                case DayCountConvention::ACT_360:
-                default:
-                {
-                    count = double((sys_days{ pillar_day } - sys_days{ start_date }).count()) / 360.0;
-                    break;
-                }
+                    case DayCountConvention::ACT_ACT:
+                    {
+                        double m = double((sys_days{ jan / day(1) / (pillar_day.year() + years(1)) } - sys_days{ jan / day(1) / pillar_day.year() }).count());
+                        count = double((sys_days{ pillar_day } - sys_days{ start_date }).count()) / m;
+                        break;
+                    }
+                    case DayCountConvention::ACT_365:
+                    {
+                        count = double((sys_days{ pillar_day } - sys_days{ start_date }).count()) / 365.0;
+                        break;
+                    }
+                    case DayCountConvention::EQUALS:
+                    {
+                        count = double(i) / (12.0 / tenor);
+                        break;
+                    }
+                    case DayCountConvention::ACT_360:
+                    default:
+                    {
+                        count = double((sys_days{ pillar_day } - sys_days{ start_date }).count()) / 360.0;
+                        break;
+                    }
                 }
                 auto start = Maturity(pillar_day, prev);
                 pillar_day += months(tenor);
                 auto end = Maturity(pillar_day, count);
-                data.emplace_back(start, end);
+                forward_periods.emplace_back(start, end);
+                spot_periods.emplace_back(end);
                 i += 1;
             }
-            return data;
         }
 
     protected:
-        std::vector<Period> periods;
+        std::vector<ForwardPeriod> forward_periods;
+        std::vector<ZeroPeriod> spot_periods;
     };
 
     class DiscountFactor
     {
     public:
-        explicit DiscountFactor(double value_)
-            : value(value_)
+        DiscountFactor(double value_)
+                : value(value_)
         {
             ;
         }
@@ -310,16 +319,16 @@ namespace qs {
             value = other.value;
         }
 
-        [[nodiscard]] InterestRate to_interest_rate(const Maturity& maturity, Convention convention_ = Convention::YIELD, int compound_times_ = Frequency::ANNUAL) const;
+        [[nodiscard]] InterestRate to_interest_rate(const Maturity& maturity = Maturity::ONE, Convention convention_ = Convention::YIELD, int compound_times_ = Frequency::ANNUAL) const;
 
         friend DiscountFactor operator*(const DiscountFactor& l, const DiscountFactor& r)
         {
-            return DiscountFactor(l.value * r.value);
+            return {l.value * r.value};
         }
 
         friend DiscountFactor operator/(const DiscountFactor& l, const DiscountFactor& r)
         {
-            return DiscountFactor(l.value / r.value);
+            return {l.value / r.value};
         }
 
     public:
@@ -329,10 +338,10 @@ namespace qs {
     class InterestRate
     {
     public:
-        explicit InterestRate(double value_, Convention convention_ = Convention::YIELD, int compound_times_ = 1)
-            : value(value_)
-            , conv(convention_)
-            , c(compound_times_)
+        explicit InterestRate(double value_, Convention convention_ = Convention::YIELD, int compound_times_ = Frequency::ANNUAL)
+                : value(value_)
+                , conv(convention_)
+                , c(compound_times_)
         {
             ;
         }
@@ -354,8 +363,8 @@ namespace qs {
         bool operator==(const InterestRate& rhs) const
         {
             return value == rhs.value &&
-                c == rhs.c &&
-                conv == rhs.conv;
+                   c == rhs.c &&
+                   conv == rhs.conv;
         }
 
         [[nodiscard]] std::vector<DiscountFactor> get_discount_factor_start(const Schedule& cal) const
@@ -403,15 +412,23 @@ namespace qs {
 
     const InterestRate InterestRate::ZERO(0.0);
 
-    DiscountFactor Period::discount_factor(const InterestRate& ir) const
+    DiscountFactor ForwardPeriod::discount_factor(const InterestRate& ir) const
     {
         double df0 = ir.to_discount_factor(start).value;
         double df1 = ir.to_discount_factor(end).value;
 
-        return DiscountFactor(df1 / df0);
+        return {df1 / df0};
     }
 
-    InterestRate Period::forward_rate(const InterestRate& ir) const
+    DiscountFactor ForwardPeriod::discount_factor(const InterestRate& ir_start, const InterestRate& ir_end) const
+    {
+        double df0 = ir_start.to_discount_factor(start).value;
+        double df1 = ir_end.to_discount_factor(end).value;
+
+        return {df1 / df0};
+    }
+
+    InterestRate ForwardPeriod::forward_rate(const InterestRate& ir) const
     {
         double df0 = ir.to_discount_factor(start).value;
         double df1 = ir.to_discount_factor(end).value;
@@ -421,17 +438,50 @@ namespace qs {
         return InterestRate((df0 / df1 - 1.0) / m);
     }
 
-    DiscountFactor Period::next_discount_factor(const InterestRate& ir) const
+    InterestRate ForwardPeriod::forward_rate(const InterestRate& ir_start, const InterestRate& ir_end) const
+    {
+        double df0 = ir_start.to_discount_factor(start).value;
+        double df1 = ir_end.to_discount_factor(end).value;
+
+        double m = end.value - start.value;
+
+        return InterestRate((df0 / df1 - 1.0) / m);
+    }
+
+    DiscountFactor ForwardPeriod::next_discount_factor(const InterestRate& ir) const
     {
         double discount = ir.to_discount_factor(end).value;
         double m = end.value - start.value;
-        return DiscountFactor(discount / (1.0 + m * forward_rate(ir).value));
+        return {discount / (1.0 + m * forward_rate(ir).value)};
     }
 
     [[nodiscard]] DiscountFactor Maturity::get_discount_factor(const InterestRate& ir) const
     {
         return ir.to_discount_factor(*this);
     }
+
+    std::vector<InterestRate> Schedule::spot_to_forward(const std::vector<InterestRate>& spots) const
+    {
+        std::vector<InterestRate> fwds;
+
+        int i = 0;
+        for(auto& period : get())
+        {
+            if(i == 0)
+            {
+                fwds.push_back(spots[i]);
+            }
+            else
+            {
+                InterestRate fwd = period.discount_factor(spots[i-1], spots[i]).to_interest_rate();
+                fwds.push_back(fwd);
+            }
+            i += 1;
+        }
+        return fwds;
+    }
+
+    //////////////////////////////////////////////////////////////
 
     struct Engine
     {
@@ -455,9 +505,9 @@ namespace qs {
     {
     public:
         explicit CashFlow(const Schedule& cal_, const InterestRate& ir_, double cash_)
-            : cal(cal_)
-            , ir(ir_)
-            , cash(cash_)
+                : cal(cal_)
+                , ir(ir_)
+                , cash(cash_)
         {
             ;
         }
@@ -477,8 +527,8 @@ namespace qs {
     {
     public:
         CouponCashFlow(const Schedule& cal_, const InterestRate& ir_, double cash_, const InterestRate& growth_ = InterestRate::ZERO)
-            : CashFlow(cal_, ir_, cash_)
-            , growth(growth_)
+                : CashFlow(cal_, ir_, cash_)
+                , growth(growth_)
         {
 
         }
@@ -494,7 +544,7 @@ namespace qs {
     {
     public:
         StartCashFlow(const Schedule& cal_, const InterestRate& ir_, double cash_)
-            : CashFlow(cal_, ir_, cash_)
+                : CashFlow(cal_, ir_, cash_)
         {
             ;
         }
@@ -519,7 +569,7 @@ namespace qs {
     {
     public:
         EndCashFlow(const Schedule& cal_, const InterestRate& ir_, double cash_)
-            : CashFlow(cal_, ir_, cash_)
+                : CashFlow(cal_, ir_, cash_)
         {
             ;
         }
@@ -548,8 +598,8 @@ namespace qs {
     {
     public:
         CustomCashFlow(const Schedule& cal_, const InterestRate& ir_, double cash_, const Maturity& maturity_)
-            : CashFlow(cal_, ir_, cash_)
-            , maturity(maturity_)
+                : CashFlow(cal_, ir_, cash_)
+                , maturity(maturity_)
         {
             ;
         }
@@ -601,14 +651,14 @@ namespace qs {
     {
         switch (conv)
         {
-        case Convention::LINEAR:
-            return (1.0 / df - 1.0) * (1.0 / maturity);
-        case Convention::YIELD:
-            return (pow(1.0 / df, 1.0 / (maturity * compound_times)) - 1.0) * compound_times;
-        case Convention::EXPONENTIAL:
-            return -log(df) / maturity;
-        default:
-            throw std::runtime_error("Invalid convention");
+            case Convention::LINEAR:
+                return (1.0 / df - 1.0) * (1.0 / maturity);
+            case Convention::YIELD:
+                return (pow(1.0 / df, 1.0 / (maturity * compound_times)) - 1.0) * compound_times;
+            case Convention::EXPONENTIAL:
+                return -log(df) / maturity;
+            default:
+                throw std::runtime_error("Invalid convention");
         }
     }
 
@@ -616,14 +666,14 @@ namespace qs {
     {
         switch (conv)
         {
-        case Convention::LINEAR:
-            return 1.0 / (1.0 + zc * maturity);
-        case Convention::YIELD:
-            return 1.0 / (pow((1.0 + zc / compound_times), maturity * compound_times));
-        case Convention::EXPONENTIAL:
-            return exp(-zc * maturity);
-        default:
-            throw std::runtime_error("Invalid convention");
+            case Convention::LINEAR:
+                return 1.0 / (1.0 + zc * maturity);
+            case Convention::YIELD:
+                return 1.0 / (pow((1.0 + zc / compound_times), maturity * compound_times));
+            case Convention::EXPONENTIAL:
+                return exp(-zc * maturity);
+            default:
+                throw std::runtime_error("Invalid convention");
         }
     }
 
@@ -687,15 +737,15 @@ namespace qs {
     InterestRate equivalent_rate(const Maturity& maturity, double rate, Convention convention, int compound_times, Convention other_convention, int other_compound_times)
     {
         return InterestRate(rate, convention, compound_times)
-            .to_discount_factor(maturity)
-            .to_interest_rate(maturity, other_convention, other_compound_times);
+                .to_discount_factor(maturity)
+                .to_interest_rate(maturity, other_convention, other_compound_times);
     }
 
     InterestRate equivalent_rate(double rate, Convention convention, int compound_times, Convention other_convention, int other_compound_times)
     {
         return InterestRate(rate, convention, compound_times)
-            .to_discount_factor(Maturity::ONE)
-            .to_interest_rate(Maturity::ONE, other_convention, other_compound_times);
+                .to_discount_factor(Maturity::ONE)
+                .to_interest_rate(Maturity::ONE, other_convention, other_compound_times);
     }
 
     InterestRate equivalent_rate(double rate, int compound_times, int other_compound_times)
@@ -819,10 +869,44 @@ namespace qs {
         else
         {
             return InterestRate((final_value - initial_value) / initial_value, Convention::LINEAR)
-                .to_discount_factor(Maturity::ONE)
-                .to_interest_rate(maturity, convention, compound_times);
+                    .to_discount_factor(Maturity::ONE)
+                    .to_interest_rate(maturity, convention, compound_times);
         }
     }
+    
+    std::vector<InterestRate> par_to_spot(const std::vector<InterestRate>& pares)
+    {
+        std::vector<InterestRate> spots;
+        double tenor_inc = 1.0;
+        double tenor = 0.0;
+        bool first = true;
+        for(auto& ir : pares)
+        {
+            if(first)
+            {
+                spots.push_back(ir);
+                first = false;
+            }
+            else
+            {
+                double back = 0.0;
+                // double cumdf = 0.0;
+                for(int i=0; i < tenor; ++i)
+                {
+                    back += to_present_value(ir.value, spots[i], Maturity(i + 1));
+                    // cumdf += 1.0 / pow(1.0 + ir.value, i+1);
+                }
+                // double zn = pow((1.0 + ir.value) / (1.0 - ir.value * cumdf), 1.0/(tenor + tenor_inc)) - 1.0;
+                InterestRate spotN = DiscountFactor((1.0 - back) / (1.0 + ir.value))
+                                        .to_interest_rate(tenor + tenor_inc);
+                spots.push_back(spotN);
+            }
+            tenor += tenor_inc;
+        }
+        return spots;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////
 
     TEST_CASE("bond_npv", "[fv]") {
 
@@ -832,13 +916,13 @@ namespace qs {
         // valor presente de un bono
         // valorar un bono que da un yield "seguro" haciendo otros proyectos risk free
         double npv = bond_npv(
-            // face value
-            16000,
-            // cupon
-            100,
-            InterestRate(0.06),
-            // calendar
-            Schedule(2022_y / 1 / 1, 20));
+                // face value
+                16000,
+                // cupon
+                100,
+                InterestRate(0.06),
+                // calendar
+                Schedule(2022_y / 1 / 1, 20));
 
         REQUIRE(npv == Catch::Approx(6135.87));
     }
@@ -989,14 +1073,14 @@ namespace qs {
         REQUIRE(coupon_from_npv(npv, InterestRate(r), cal) == Catch::Approx(5000));
 
         REQUIRE(classic_npv(
-            // inversion
-            6000,
-            // cuota
-            500,
-            // free risk rate
-            InterestRate(0.01),
-            // years
-            Schedule(2022_y / 1 / 1, 1)) == Catch::Approx(-5504.9504950495));
+                // inversion
+                6000,
+                // cuota
+                500,
+                // free risk rate
+                InterestRate(0.01),
+                // years
+                Schedule(2022_y / 1 / 1, 1)) == Catch::Approx(-5504.9504950495));
 
         double npv1 = classic_npv(1000, 100, InterestRate(-0.1940185202), Schedule(2022_y / 1 / 1, 6));
         REQUIRE(npv1 == Catch::Approx(364.7956282082));
@@ -1125,9 +1209,9 @@ namespace qs {
         // cupon from growth cupon
 
         double fixed_coupon = coupon_from_growth_coupon(1000,
-            InterestRate(0.05, Convention::YIELD, 12),
-            InterestRate(0.08, Convention::YIELD, 12),
-            cal);
+                                                        InterestRate(0.05, Convention::YIELD, 12),
+                                                        InterestRate(0.08, Convention::YIELD, 12),
+                                                        cal);
         REQUIRE(fixed_coupon == Catch::Approx(5649.6802745071));
 
         // fv
@@ -1414,7 +1498,7 @@ FxdNotional	10000000		FltNotional	-10000000
         REQUIRE(r_continuous_2y == Catch::Approx(InterestRate(swaprate_2y, Convention::YIELD, Frequency::QUATERLY).to_other_interest_rate(cumyear_2y, Convention::EXPONENTIAL).value));
         REQUIRE(r_continuous_2y == Catch::Approx(0.0036393439));
 
-        // Period per = Period(Maturity(cumyear_2y_prev), Maturity(cumyear_2y));
+        // ForwardPeriod per = ForwardPeriod(Maturity(cumyear_2y_prev), Maturity(cumyear_2y));
         // InterestRate fr = per.forward_rate(InterestRate(zerorate_2y_prev, Convention::EXPONENTIAL));
         // REQUIRE(fr.value == Catch::Approx(0.003181505));
 
@@ -1453,14 +1537,14 @@ Tenor	Type	Frequency	Daycount	SwapRate	Date	YearFraction	CumYearFraction	ZeroRat
 
         // REQUIRE(zerorate_10y == Catch::Approx(0.013906471));
         // REQUIRE(zerorate_10y == Catch::Approx(InterestRate(swaprate_10y, Convention::LINEAR).to_discount_factor(Maturity(cumyear_10y)).to_interest_rate(cumyear_10y, Convention::EXPONENTIAL).value));
-        // 
+        //
         // 0.014626386588449164
 
     }
 
     TEST_CASE("property multiply continuous interest", "[ir exp]")
     {
-        // add periods
+        // add forward_periods
 
         InterestRate r1 = on_capital(1000, 2000, Maturity(3), Convention::EXPONENTIAL);
         InterestRate r2 = on_capital(2000, 3000, Maturity(1), Convention::EXPONENTIAL);
@@ -1478,7 +1562,7 @@ Tenor	Type	Frequency	Daycount	SwapRate	Date	YearFraction	CumYearFraction	ZeroRat
 
     TEST_CASE("property multiply continuous interest with discount factors", "[ir exp]")
     {
-        // add periods
+        // add forward_periods
 
         DiscountFactor r1 = on_capital(1000, 2000, Maturity(3), Convention::EXPONENTIAL).to_discount_factor(Maturity(3));
         DiscountFactor r2 = on_capital(2000, 3000, Maturity(1), Convention::EXPONENTIAL).to_discount_factor(Maturity(1));
@@ -1494,7 +1578,7 @@ Tenor	Type	Frequency	Daycount	SwapRate	Date	YearFraction	CumYearFraction	ZeroRat
 
     TEST_CASE("property multiply continuous interest 2", "[ir yield]")
     {
-        // add periods
+        // add forward_periods
         InterestRate r1 = on_capital(1000, 1100, Maturity(3), Convention::LINEAR).to_other_interest_rate(Maturity(3), Convention::EXPONENTIAL);
         InterestRate r2 = on_capital(1100, 1200, Maturity(1), Convention::YIELD).to_other_interest_rate(Maturity(1), Convention::EXPONENTIAL);
 
@@ -1508,9 +1592,6 @@ Tenor	Type	Frequency	Daycount	SwapRate	Date	YearFraction	CumYearFraction	ZeroRat
         double w2 = 1.0 / 4.0;
         REQUIRE(result.value == Catch::Approx(r1.value * w1 + r2.value * w2));
 
-
-        using namespace date;
-
         auto start_date = jan / day(1) / 2020;
         auto end_date = jan / day(1) / 2024;
 
@@ -1523,5 +1604,34 @@ Tenor	Type	Frequency	Daycount	SwapRate	Date	YearFraction	CumYearFraction	ZeroRat
 
         REQUIRE(StartCashFlow(cal, InterestRate(result.value), 1000).to_end_cashflow().cash == Catch::Approx(1195.1700905152));
 
+    }
+
+    TEST_CASE("bootstraping spot rates from par rates", "[spot rates]")
+    {
+        auto start_date = jan / day(1) / 2020;
+        auto end_date = jan / day(1) / 2023;
+
+        Schedule cal( start_date, end_date );
+
+        // par_rates_to_spot_rates
+        // spot_rates_to_forward_rates
+
+        // https://wiki.treasurers.org/wiki/Converting_from_par_rates
+        //
+        std::vector<InterestRate> pares = {InterestRate(0.04, Convention::YIELD, Frequency::ANNUAL),
+                                           InterestRate(0.052, Convention::YIELD, Frequency::ANNUAL),
+                                           InterestRate(0.064, Convention::YIELD, Frequency::ANNUAL),
+        };
+        auto spots = par_to_spot(pares);
+
+        // http://financialexamhelp123.com/par-curve-spot-curve-and-forward-curve/
+        // http://financialexamhelp123.com/calculating-forward-rates-from-spot-rates/
+        // https://wiki.treasurers.org/wiki/Converting_from_zero_coupon_rates
+
+        auto fwds = cal.spot_to_forward(spots);
+
+        REQUIRE(1 + spots[0].value == Catch::Approx(1 + fwds[0].value));
+        REQUIRE(pow(1 + spots[1].value, 2) == Catch::Approx((1+fwds[0].value) * (1+fwds[1].value)));
+        REQUIRE(pow(1 + spots[2].value, 3) == Catch::Approx((1+fwds[0].value) * (1+fwds[1].value) * (1+fwds[2].value)));
     }
 }
