@@ -1,3 +1,5 @@
+# TODO: know order in queue (burger kling style
+
 import multiprocessing
 import threading
 import time
