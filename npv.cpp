@@ -242,7 +242,7 @@ namespace qs {
             return mats.back();
         }
 
-        [[nodiscard]] std::vector<InterestRate> spot_to_forward(const std::vector<InterestRate>& spots) const;
+        [[nodiscard]] std::vector<InterestRate> spot_to_forward(const std::vector<InterestRate>& spots, Convention conv = Convention::YIELD, int compound_times = Frequency::ANNUAL) const;
 
     protected:
         void build()
@@ -460,7 +460,7 @@ namespace qs {
         return ir.to_discount_factor(*this);
     }
 
-    std::vector<InterestRate> Schedule::spot_to_forward(const std::vector<InterestRate>& spots) const
+    std::vector<InterestRate> Schedule::spot_to_forward(const std::vector<InterestRate>& spots, Convention conv, int compound_times) const
     {
         std::vector<InterestRate> fwds;
 
@@ -473,7 +473,7 @@ namespace qs {
             }
             else
             {
-                InterestRate fwd = period.discount_factor(spots[i-1], spots[i]).to_interest_rate();
+                InterestRate fwd = period.discount_factor(spots[i-1], spots[i]).to_interest_rate(Maturity::ONE, conv, compound_times);
                 fwds.push_back(fwd);
             }
             i += 1;
@@ -874,8 +874,9 @@ namespace qs {
         }
     }
     
-    std::vector<InterestRate> par_to_spot(const std::vector<InterestRate>& pares)
+    std::vector<InterestRate> par_to_spot(const std::vector<InterestRate>& pares, Convention conv = Convention::YIELD, int compound_times = Frequency::ANNUAL)
     {
+        // bootstraping
         std::vector<InterestRate> spots;
         double tenor_inc = 1.0;
         double tenor = 0.0;
@@ -889,16 +890,13 @@ namespace qs {
             }
             else
             {
-                double back = 0.0;
-                // double cumdf = 0.0;
+                double accum = 0.0;
                 for(int i=0; i < tenor; ++i)
                 {
-                    back += to_present_value(ir.value, spots[i], Maturity(i + 1));
-                    // cumdf += 1.0 / pow(1.0 + ir.value, i+1);
+                    accum += to_present_value(ir.value, spots[i], Maturity(i + 1));
                 }
-                // double zn = pow((1.0 + ir.value) / (1.0 - ir.value * cumdf), 1.0/(tenor + tenor_inc)) - 1.0;
-                InterestRate spotN = DiscountFactor((1.0 - back) / (1.0 + ir.value))
-                                        .to_interest_rate(tenor + tenor_inc);
+                InterestRate spotN = DiscountFactor((1.0 - accum) / (1.0 + ir.value))
+                                        .to_interest_rate(tenor + tenor_inc, conv, compound_times);
                 spots.push_back(spotN);
             }
             tenor += tenor_inc;
@@ -1622,17 +1620,16 @@ Tenor	Type	Frequency	Daycount	SwapRate	Date	YearFraction	CumYearFraction	ZeroRat
                                            InterestRate(0.052, Convention::YIELD, Frequency::ANNUAL),
                                            InterestRate(0.064, Convention::YIELD, Frequency::ANNUAL),
         };
-        auto spots = par_to_spot(pares);
+        auto spots = par_to_spot(pares, Convention::YIELD);
 
         // http://financialexamhelp123.com/par-curve-spot-curve-and-forward-curve/
         // http://financialexamhelp123.com/calculating-forward-rates-from-spot-rates/
         // https://wiki.treasurers.org/wiki/Converting_from_zero_coupon_rates
 
-        auto fwds = cal.spot_to_forward(spots);
+        auto fwds = cal.spot_to_forward(spots, Convention::YIELD);
 
         REQUIRE(1 + spots[0].value == Catch::Approx(1 + fwds[0].value));
         REQUIRE(pow(1 + spots[1].value, 2) == Catch::Approx((1+fwds[0].value) * (1+fwds[1].value)));
         REQUIRE(pow(1 + spots[2].value, 3) == Catch::Approx((1+fwds[0].value) * (1+fwds[1].value) * (1+fwds[2].value)));
     }
 }
-
