@@ -48,8 +48,8 @@ namespace qs {
     };
 
     // convert value and zc
-    double df2zc(double df, double maturity, Convention conv = Convention::YIELD, int compound_times = Frequency::ANNUAL);
-    double zc2df(double zc, double maturity, Convention conv = Convention::YIELD, int compound_times = Frequency::ANNUAL);
+    double discount2rate(double df, double maturity, Convention conv = Convention::YIELD, int compound_times = Frequency::ANNUAL);
+    double rate2discount(double zc, double maturity, Convention conv = Convention::YIELD, int compound_times = Frequency::ANNUAL);
     InterestRate equivalent_rate(const Maturity& maturity, double rate, Convention conv, int compound_times, Convention other_convention = Convention::YIELD, int other_compound_times = Frequency::ANNUAL);
     InterestRate equivalent_rate(double rate, Convention conv, int compound_times, Convention other_convention = Convention::YIELD, int other_compound_times = Frequency::ANNUAL);
     InterestRate equivalent_rate(double rate, int compound_times, int other_compound_times = Frequency::ANNUAL);
@@ -76,7 +76,7 @@ namespace qs {
     growth_coupon_from_coupon
     grouth_coupon_from_fv
     */
-    double compute_irr(const std::vector<double>& cf, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
+    InterestRate compute_par_yield(const std::vector<double>& cf, Convention convention = Convention::YIELD, int compound_times = Frequency::ANNUAL);
 
     // value products
     double classic_npv(double investment, double coupon, const InterestRate& interest_rate, const Schedule& cal);
@@ -225,6 +225,15 @@ namespace qs {
             build();
         }
 
+        Schedule(int duration, int tenor_ = 12, DayCountConvention dc_convention_ = DayCountConvention::EQUALS)
+                : start_date(jan / day(1) / 2020)
+                , end_date((jan / day(1) / 2020) + date::years(duration))
+                , tenor(tenor_)
+                , dc_convention(dc_convention_)
+        {
+            build();
+        }
+
         [[nodiscard]] const std::vector<ForwardPeriod>& get() const
         {
             return forward_periods;
@@ -331,6 +340,26 @@ namespace qs {
             return {l.value / r.value};
         }
 
+        friend DiscountFactor operator*(const DiscountFactor& l, double r)
+        {
+            return {l.value * r};
+        }
+
+        friend DiscountFactor operator/(const DiscountFactor& l, double r)
+        {
+            return {l.value / r};
+        }
+
+        friend DiscountFactor operator+(const DiscountFactor& l, const DiscountFactor& r)
+        {
+            return {l.value + r.value};
+        }
+
+        friend DiscountFactor operator-(const DiscountFactor& l, const DiscountFactor& r)
+        {
+            return {l.value - r.value};
+        }
+
     public:
         double value;
     };
@@ -389,7 +418,7 @@ namespace qs {
 
         [[nodiscard]] DiscountFactor to_discount_factor(const Maturity& maturity) const
         {
-            return DiscountFactor(zc2df(value, maturity.value, conv, c));
+            return DiscountFactor(rate2discount(value, maturity.value, conv, c));
         }
 
         [[nodiscard]] InterestRate to_other_interest_rate(Convention other_convention, int other_compound_times = Frequency::ANNUAL) const
@@ -625,7 +654,7 @@ namespace qs {
 
     InterestRate DiscountFactor::to_interest_rate(const Maturity& maturity, Convention convention_, int compound_times_) const
     {
-        return InterestRate(df2zc(value, maturity.value, convention_, compound_times_), convention_, compound_times_);
+        return InterestRate(discount2rate(value, maturity.value, convention_, compound_times_), convention_, compound_times_);
     }
 
     [[nodiscard]] StartCashFlow CouponCashFlow::to_start_cashflow() const
@@ -647,7 +676,7 @@ namespace qs {
     }
     // ********************** //
 
-    double df2zc(double df, double maturity, Convention conv, int compound_times)
+    double discount2rate(double df, double maturity, Convention conv, int compound_times)
     {
         switch (conv)
         {
@@ -662,7 +691,7 @@ namespace qs {
         }
     }
 
-    double zc2df(double zc, double maturity, Convention conv, int compound_times)
+    double rate2discount(double zc, double maturity, Convention conv, int compound_times)
     {
         switch (conv)
         {
@@ -681,7 +710,8 @@ namespace qs {
 #define HIGH_RATE  0.999
 #define MAX_ITERATION 1000
 #define PRECISION_REQ 0.00000001
-    double compute_irr(const std::vector<double>& cf, Convention convention, int compound_times)
+
+    InterestRate compute_par_yield(const std::vector<double>& cf, Convention convention, int compound_times)
     {
         int i = 0, j = 0;
         double m = 0.0;
@@ -699,7 +729,7 @@ namespace qs {
             npv = 0.00;
             for (j = 0; j < cf.size(); j++)
             {
-                discount_factor = zc2df(guessRate, j, convention, compound_times);
+                discount_factor = rate2discount(guessRate, j, convention, compound_times);
                 npv = npv + (cf[j] * discount_factor);
             }
             /* Stop checking once the required precision is achieved */
@@ -731,7 +761,7 @@ namespace qs {
             guessRate = (lowGuessRate + highGuessRate) / 2;
             newguessRate = guessRate;
         }
-        return guessRate;
+        return InterestRate(guessRate, convention, compound_times);
     }
 
     InterestRate equivalent_rate(const Maturity& maturity, double rate, Convention convention, int compound_times, Convention other_convention, int other_compound_times)
@@ -1016,36 +1046,36 @@ namespace qs {
         REQUIRE(r * 100 == Catch::Approx(38.1698559416));
 
         // forward prediction
-        REQUIRE(to_future_value(final, InterestRate(r, Convention::YIELD, 12), forward_years) == Catch::Approx(44524.0670913586));
+        REQUIRE(to_future_value(final, InterestRate(r, Convention::YIELD, 12), Maturity(forward_years)) == Catch::Approx(44524.0670913586));
 
         // trading
         initial = 5000;
         r = 0.10;
         double r_anual = equivalent_rate(r, 12, 1).value;
         double years = 3.0;
-        REQUIRE(to_future_value(initial, InterestRate(r, Convention::YIELD, 12), years) == \
-            Catch::Approx(to_future_value(initial, InterestRate(r_anual), years)));
+        REQUIRE(to_future_value(initial, InterestRate(r, Convention::YIELD, 12), Maturity(years)) == \
+            Catch::Approx(to_future_value(initial, InterestRate(r_anual), Maturity(years))));
     }
 
     TEST_CASE("value & zc", "[fv]") {
 
-        REQUIRE(zc2df(df2zc(0.95, 3, Convention::LINEAR), 3, Convention::LINEAR) == Catch::Approx(0.95));
-        REQUIRE(df2zc(zc2df(0.05, 3, Convention::LINEAR), 3, Convention::LINEAR) == Catch::Approx(0.05));
+        REQUIRE(rate2discount(discount2rate(0.95, 3, Convention::LINEAR), 3, Convention::LINEAR) == Catch::Approx(0.95));
+        REQUIRE(discount2rate(rate2discount(0.05, 3, Convention::LINEAR), 3, Convention::LINEAR) == Catch::Approx(0.05));
 
-        REQUIRE(zc2df(df2zc(0.95, 3, Convention::LINEAR, 4), 3, Convention::LINEAR) == Catch::Approx(0.95));
-        REQUIRE(df2zc(zc2df(0.05, 3, Convention::LINEAR), 3, Convention::LINEAR) == Catch::Approx(0.05));
+        REQUIRE(rate2discount(discount2rate(0.95, 3, Convention::LINEAR, 4), 3, Convention::LINEAR) == Catch::Approx(0.95));
+        REQUIRE(discount2rate(rate2discount(0.05, 3, Convention::LINEAR), 3, Convention::LINEAR) == Catch::Approx(0.05));
 
-        REQUIRE(zc2df(df2zc(0.95, 3, Convention::YIELD), 3, Convention::YIELD) == Catch::Approx(0.95));
-        REQUIRE(df2zc(zc2df(0.05, 3, Convention::YIELD), 3, Convention::YIELD) == Catch::Approx(0.05));
+        REQUIRE(rate2discount(discount2rate(0.95, 3, Convention::YIELD), 3, Convention::YIELD) == Catch::Approx(0.95));
+        REQUIRE(discount2rate(rate2discount(0.05, 3, Convention::YIELD), 3, Convention::YIELD) == Catch::Approx(0.05));
 
-        REQUIRE(zc2df(df2zc(0.95, 3, Convention::YIELD, 4), 3, Convention::YIELD, 4) == Catch::Approx(0.95));
-        REQUIRE(df2zc(zc2df(0.05, 3, Convention::YIELD, 4), 3, Convention::YIELD, 4) == Catch::Approx(0.05));
+        REQUIRE(rate2discount(discount2rate(0.95, 3, Convention::YIELD, 4), 3, Convention::YIELD, 4) == Catch::Approx(0.95));
+        REQUIRE(discount2rate(rate2discount(0.05, 3, Convention::YIELD, 4), 3, Convention::YIELD, 4) == Catch::Approx(0.05));
 
-        REQUIRE(zc2df(df2zc(0.95, 3, Convention::EXPONENTIAL), 3, Convention::EXPONENTIAL) == Catch::Approx(0.95));
-        REQUIRE(df2zc(zc2df(0.05, 3, Convention::EXPONENTIAL), 3, Convention::EXPONENTIAL) == Catch::Approx(0.05));
+        REQUIRE(rate2discount(discount2rate(0.95, 3, Convention::EXPONENTIAL), 3, Convention::EXPONENTIAL) == Catch::Approx(0.95));
+        REQUIRE(discount2rate(rate2discount(0.05, 3, Convention::EXPONENTIAL), 3, Convention::EXPONENTIAL) == Catch::Approx(0.05));
 
-        REQUIRE(zc2df(df2zc(0.95, 3, Convention::EXPONENTIAL), 3, Convention::EXPONENTIAL) == Catch::Approx(0.95));
-        REQUIRE(df2zc(zc2df(0.05, 3, Convention::EXPONENTIAL), 3, Convention::EXPONENTIAL) == Catch::Approx(0.05));
+        REQUIRE(rate2discount(discount2rate(0.95, 3, Convention::EXPONENTIAL), 3, Convention::EXPONENTIAL) == Catch::Approx(0.95));
+        REQUIRE(discount2rate(rate2discount(0.05, 3, Convention::EXPONENTIAL), 3, Convention::EXPONENTIAL) == Catch::Approx(0.05));
     }
 
     TEST_CASE("bond_npv2", "[fv]") {
@@ -1084,8 +1114,8 @@ namespace qs {
         REQUIRE(npv1 == Catch::Approx(364.7956282082));
 
         std::vector<double> cf = { -1000, 100, 100, 100, 100, 100 };
-        double irr = compute_irr(cf);
-        REQUIRE(irr == Catch::Approx(-0.1940185202));
+        InterestRate irr = compute_par_yield(cf);
+        REQUIRE(irr.value == Catch::Approx(-0.1940185202));
     }
 
     TEST_CASE("real coupon", "[fv]") {
@@ -1252,7 +1282,7 @@ namespace qs {
             int actual = (sys_days{ jan / day(1) / (d.year() + years(1)) } - sys_days{ jan / day(1) / d.year() }).count();
             double maturity = double((sys_days{ d } - sys_days{ start_date }).count()) / double(actual);
             std::cout << maturity << std::endl;
-            std::cout << "for: " << d << " (dia " << d.day() << ")" << ": " << to_present_value(1000, InterestRate(0.05), maturity) << std::endl;
+            std::cout << "for: " << d << " (dia " << d.day() << ")" << ": " << to_present_value(1000, InterestRate(0.05), Maturity(maturity)) << std::endl;
             last_maturity = maturity;
         }
         REQUIRE(last_maturity == Catch::Approx(10.0082191781));
@@ -1631,5 +1661,84 @@ Tenor	Type	Frequency	Daycount	SwapRate	Date	YearFraction	CumYearFraction	ZeroRat
         REQUIRE(1 + spots[0].value == Catch::Approx(1 + fwds[0].value));
         REQUIRE(pow(1 + spots[1].value, 2) == Catch::Approx((1+fwds[0].value) * (1+fwds[1].value)));
         REQUIRE(pow(1 + spots[2].value, 3) == Catch::Approx((1+fwds[0].value) * (1+fwds[1].value) * (1+fwds[2].value)));
+
+        // strips structure
+        // TODO convert bond prices to DiscountFactors objects
+        std::vector< std::pair<long, long> > structure_term;
+        structure_term.emplace_back(1, 99);
+        structure_term.emplace_back(2, 97);
+        structure_term.emplace_back(3, 95);
+        structure_term.emplace_back(5, 90);
+        structure_term.emplace_back(10, 73);
+
+        std::vector<InterestRate> spots2;
+
+        for(const auto& [maturity, bond_value] : structure_term)
+        {
+            DiscountFactor bond1(bond_value / 100.0);
+            spots2.emplace_back(bond1.to_interest_rate(Maturity(maturity)));
+        }
+
+        REQUIRE(spots2[0].value == Catch::Approx(0.0101010101));
+        REQUIRE(spots2[1].value == Catch::Approx(0.0153461651));
+        REQUIRE(spots2[2].value == Catch::Approx(0.0172447682));
+        REQUIRE(spots2[3].value == Catch::Approx(0.0212956876));
+        REQUIRE(spots2[4].value == Catch::Approx(0.0319715249));
+
+        for(const auto& spot : spots2)
+        {
+            double v = spot.value;
+            std::cout << v << std::endl;
+        }
+
+        std::cout << "-----" << std::endl;
+
+        Schedule cal2(5);
+
+        auto fwds2 = cal2.spot_to_forward(spots2);
+        for(const auto& fwd : fwds2)
+        {
+            double v = fwd.value;
+            std::cout << v << std::endl;
+        }
+
+        Schedule cal3(4);
+        Schedule subcal3(2);
+
+        // interpolation example
+        InterestRate ir1(0.05);
+        InterestRate ir2(0.07);
+        StartCashFlow start_cash1(cal3, ir2, 15000);
+        EndCashFlow end_cash = start_cash1.to_end_cashflow();
+        std::cout << end_cash.cash << std::endl;
+
+        EndCashFlow end_cash2(subcal3, ir1, 20000);
+        StartCashFlow start_cash2 = end_cash2.to_start_cashflow();
+        std::cout << start_cash2.cash << std::endl;
+
+        DiscountFactor y2(start_cash2.cash / end_cash2.cash);
+        DiscountFactor y4(start_cash1.cash / end_cash.cash);
+        std::cout << y2.value << std::endl;
+        std::cout << y4.value << std::endl;
+        DiscountFactor y3 = (y2 + y4) / 2.0;
+        std::cout << y3.value << std::endl;
+
+        std::vector<InterestRate> spots3;
+        spots3.push_back(y2.to_interest_rate(Maturity(1)));
+        spots3.push_back(y2.to_interest_rate(Maturity(2)));
+        spots3.push_back(y3.to_interest_rate(Maturity(3)));
+        spots3.push_back(y4.to_interest_rate(Maturity(4)));
+        std::cout << "--------" << std::endl;
+        for(const auto& spot : spots3)
+        {
+            double v = spot.value;
+            std::cout << v << std::endl;
+        }
+        std::cout << "--------" << std::endl;
+        for(const auto& spot : cal3.spot_to_forward(spots3))
+        {
+            double v = spot.value;
+            std::cout << v << std::endl;
+        }
     }
 }
