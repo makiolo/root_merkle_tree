@@ -4,6 +4,7 @@ import os.path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib import animation
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler, Normalizer
 
 
@@ -62,10 +63,11 @@ def learning(model=None, serialize_to=None, debug=True, **kwargs):
                 df.rename(columns=dict((x, 'expected_{}'.format(x)) for x in outputs), inplace=True)
                 for x in outputs:
                     df['error_{}'.format(x)] = (df['expected_{}'.format(x)] - df['model_{}'.format(x)])
-                # return df[(-100 < df['error_output1']) & (df['error_output1'] < 100)]
                 return df
             else:
-                return df2
+                df1 = pd.DataFrame(xx, columns=inputs)
+                df = pd.concat([df1, df2], axis=1)
+                return df
 
         def __call__(self, dataframe):
             key_map = tuple(dataframe.columns.values + [self.functor.__name__])
@@ -124,6 +126,9 @@ from sklearn.naive_bayes            import GaussianNB
 # neuronal net
 from sklearn.neural_network import MLPRegressor
 
+# Distribution
+from sklearn.preprocessing import PowerTransformer
+
 
 # @learning(model=linear_model.LinearRegression, debug=True)
 # @learning(model=LassoLars, debug=True, alpha=.1, normalize=False)
@@ -137,67 +142,231 @@ def calculate_outputs(data):
     # polynomial
     # data['output1'] = 2*data['input2'] ** 3 + 5*data['input2']**2 + 10*data['input1'] * 5 - 1
     # stochastic
-    sigma = 2
-    mu = 4
-    data['serie'] = pd.Series(sigma * np.random.randn(1000) + mu)
-    data['output1'] = data['serie'].rolling(window=60).quantile(0.01)
-    data['output2'] = data['serie'].rolling(window=60).quantile(0.99)
-    data.dropna(inplace=True)
+    data['output1'] = data['max_+72_0']
+    data['output2'] = data['min_+72_0']
+
     # define new outputs
-    return ['serie', 'output1', 'output2']
+    return ['output1', 'output2']
+
+
+def make_gaussian(serie):
+    return PowerTransformer(standardize=True).fit_transform(np.array(serie).reshape(-1, 1))
+
+
+def calculate_returns(serie, n=1, log=False):
+    if log:
+        if n > 0:
+            return np.log(serie / serie.shift(n))
+        else:
+            return np.log(serie.shift(n) / serie)
+    else:
+        if n > 0:
+            return serie / serie.shift(n) - 1.0
+        else:
+            return serie.shift(n) / serie - 1.0
+
+
+def calculate_max(serie, n=1):
+    if n > 0:
+        return serie.rolling(n).max()
+    else:
+        return serie.shift(n).rolling(-n).max()
+
+
+def calculate_min(serie, n=1):
+    if n > 0:
+        return serie.rolling(n).min()
+    else:
+        return serie.shift(n).rolling(-n).min()
+
+
+def geo_paths(S, T, q, sigma, steps, N, r):
+    dt = T / steps
+    ST = np.cumsum(((r - q - sigma ** 2 / 2) * dt + \
+                                sigma * np.sqrt(dt) * \
+                                np.random.normal(size=(steps, N))), axis=0)
+    return S + np.exp(ST)
+
+
+S = 100
+T = 1.0
+q = 0.0
+sigma = 0.22
+steps = 20000
+N = 4
+r = 0.06
+paths = geo_paths(S, T, q, sigma, steps, N, r)
 
 ############
 print('Train ...')
 dataset = {
-    'input1': np.linspace(-10000, 10000, 1000),
-    'input2': np.linspace(-10000, 10000, 1000),
+    'input1': paths.T[0],
+    'input2': paths.T[1],
 }
 df = pd.DataFrame(dataset)
+###
+df['log_ret_-24_0'] = (calculate_returns(df.input1, 24))
+df['log_ret_-48_0'] = (calculate_returns(df.input1, 48))
+df['log_ret_-72_0'] = (calculate_returns(df.input1, 72))
+df['log_ret_+24_0'] = (calculate_returns(df.input1, -24))
+df['log_ret_+48_0'] = (calculate_returns(df.input1, -48))
+df['log_ret_+72_0'] = (calculate_returns(df.input1, -72))
+
+df['log_ret_-24_1'] = (calculate_returns(df.input2, 24))
+df['log_ret_-48_1'] = (calculate_returns(df.input2, 48))
+df['log_ret_-72_1'] = (calculate_returns(df.input2, 72))
+df['log_ret_+24_1'] = (calculate_returns(df.input2, -24))
+df['log_ret_+48_1'] = (calculate_returns(df.input2, -48))
+df['log_ret_+72_1'] = (calculate_returns(df.input2, -72))
+
+df['max_-24_0'] = (calculate_max(df.input1, 24))
+df['max_-48_0'] = (calculate_max(df.input1, 48))
+df['max_-72_0'] = (calculate_max(df.input1, 72))
+df['max_+24_0'] = (calculate_max(df.input1, -24))
+df['max_+48_0'] = (calculate_max(df.input1, -48))
+df['max_+72_0'] = (calculate_max(df.input1, -72))
+
+df['max_-24_1'] = (calculate_max(df.input2, 24))
+df['max_-48_1'] = (calculate_max(df.input2, 48))
+df['max_-72_1'] = (calculate_max(df.input2, 72))
+df['max_+24_1'] = (calculate_max(df.input2, -24))
+df['max_+48_1'] = (calculate_max(df.input2, -48))
+df['max_+72_1'] = (calculate_max(df.input2, -72))
+
+df['min_-24_0'] = (calculate_min(df.input1, 24))
+df['min_-48_0'] = (calculate_min(df.input1, 48))
+df['min_-72_0'] = (calculate_min(df.input1, 72))
+df['min_+24_0'] = (calculate_min(df.input1, -24))
+df['min_+48_0'] = (calculate_min(df.input1, -48))
+df['min_+72_0'] = (calculate_min(df.input1, -72))
+
+df['min_-24_1'] = (calculate_min(df.input2, 24))
+df['min_-48_1'] = (calculate_min(df.input2, 48))
+df['min_-72_1'] = (calculate_min(df.input2, 72))
+df['min_+24_1'] = (calculate_min(df.input2, -24))
+df['min_+48_1'] = (calculate_min(df.input2, -48))
+df['min_+72_1'] = (calculate_min(df.input2, -72))
+
+df.dropna(inplace=True)
+###
+print(df)
+
 df = calculate_outputs(df)
 print(df)
 
 ############
 
+sigma = 2
+mu = 102
+
 print('Predict ...')
 dataset = {
-    'input1': np.linspace(-10000, 10000, 1000),
-    'input2': np.linspace(-10000, 10000, 1000),
+    'input1': paths.T[2],
+    'input2': paths.T[3],
 }
 df = pd.DataFrame(dataset)
+# transform inputs
+#
+df['log_ret_-24_0'] = (calculate_returns(df.input1, 24))
+df['log_ret_-48_0'] = (calculate_returns(df.input1, 48))
+df['log_ret_-72_0'] = (calculate_returns(df.input1, 72))
+df['log_ret_+24_0'] = (calculate_returns(df.input1, -24))
+df['log_ret_+48_0'] = (calculate_returns(df.input1, -48))
+df['log_ret_+72_0'] = (calculate_returns(df.input1, -72))
+
+df['log_ret_-24_1'] = (calculate_returns(df.input2, 24))
+df['log_ret_-48_1'] = (calculate_returns(df.input2, 48))
+df['log_ret_-72_1'] = (calculate_returns(df.input2, 72))
+df['log_ret_+24_1'] = (calculate_returns(df.input2, -24))
+df['log_ret_+48_1'] = (calculate_returns(df.input2, -48))
+df['log_ret_+72_1'] = (calculate_returns(df.input2, -72))
+
+df['max_-24_0'] = (calculate_max(df.input1, 24))
+df['max_-48_0'] = (calculate_max(df.input1, 48))
+df['max_-72_0'] = (calculate_max(df.input1, 72))
+df['max_+24_0'] = (calculate_max(df.input1, -24))
+df['max_+48_0'] = (calculate_max(df.input1, -48))
+df['max_+72_0'] = (calculate_max(df.input1, -72))
+
+df['max_-24_1'] = (calculate_max(df.input2, 24))
+df['max_-48_1'] = (calculate_max(df.input2, 48))
+df['max_-72_1'] = (calculate_max(df.input2, 72))
+df['max_+24_1'] = (calculate_max(df.input2, -24))
+df['max_+48_1'] = (calculate_max(df.input2, -48))
+df['max_+72_1'] = (calculate_max(df.input2, -72))
+
+df['min_-24_0'] = (calculate_min(df.input1, 24))
+df['min_-48_0'] = (calculate_min(df.input1, 48))
+df['min_-72_0'] = (calculate_min(df.input1, 72))
+df['min_+24_0'] = (calculate_min(df.input1, -24))
+df['min_+48_0'] = (calculate_min(df.input1, -48))
+df['min_+72_0'] = (calculate_min(df.input1, -72))
+
+df['min_-24_1'] = (calculate_min(df.input2, 24))
+df['min_-48_1'] = (calculate_min(df.input2, 48))
+df['min_-72_1'] = (calculate_min(df.input2, 72))
+df['min_+24_1'] = (calculate_min(df.input2, -24))
+df['min_+48_1'] = (calculate_min(df.input2, -48))
+df['min_+72_1'] = (calculate_min(df.input2, -72))
+
+df.dropna(inplace=True)
+###
+
 df = calculate_outputs(df)
-print(df)
 
 
 if calculate_outputs.debug:
+
+    print('Error mean:')
+    print(df['expected_output1'].mean() - df['model_output1'].mean())
+    print('Error std:')
+    print(df['expected_output1'].std() - df['model_output1'].std())
+
     fig, axs = plt.subplots(2, 2, figsize=(15, 9))
 
-    axs[0,0].plot(df.input1, df.expected_serie, label='serie (real).', marker='o', linestyle='-')
+    def animate(i):
+        axs[0,0].cla()  # clear the previous image
+        axs[1,0].cla()  # clear the previous image
 
-    axs[0,0].plot(df.input1, df.expected_output1, label='output1 (real).', marker='x', linestyle='-')
-    axs[0,0].plot(df.input1, df.model_output1, label='output1 (model).', marker='o', linestyle='-')
-    axs[0,0].legend()
+        n = 20
 
-    axs[1,0].plot(df.input1, df.error_output1, label='abs. error 1.', marker='o', linestyle='-')
-    axs[1,0].legend()
+        axs[0,0].plot(df.input1[:i-n], df.model_output1[:i-n], color='#EBA2A6', marker='o', linestyle='')  # plot the line
+        axs[0,0].plot(df.input1[:i-n], df.expected_output1[:i-n], color='#B5FFC8', marker='x', linestyle='')  # plot the line
+        axs[0,0].plot(df.input1[i-n:i], df.model_output1[i-n:i], color='#9C1F26', marker='o', linestyle='-')  # plot the line
+        axs[0,0].plot(df.input1[i-n:i], df.expected_output1[i-n:i], color='#2F9C4A', marker='x', linestyle='-')  # plot the line
 
-    if True:
-        axs[0,0].plot(df.input2, df.expected_output2, label='output2 (real).',marker='x',linestyle='-')
-        axs[0,0].plot(df.input2, df.model_output2, label='output2 (model).',marker='o',linestyle='-')
-        axs[0,0].legend()
+        axs[1, 0].plot(df.input1[:i-n], df.error_output1[:i-n], color='#EBA2A6', label='abs. error 1.', marker='x', linestyle='')
+        axs[1, 0].plot(df.input1[i-n:i], df.error_output1[i-n:i], color='#9C1F26', label='abs. error 1.', marker='x', linestyle='-')
 
-        axs[1,0].plot(df.input2, df.error_output2, label='abs. error 2.', marker='o',linestyle='-')
-        axs[1,0].legend()
+        if True:
+            axs[0, 1].cla()  # clear the previous image
+            axs[1, 1].cla()  # clear the previous image
 
+            axs[0, 1].plot(df.input1[:i - n], df.model_output2[:i - n], color='#EBA2A6', marker='o', linestyle='')  # plot the line
+            axs[0, 1].plot(df.input1[:i - n], df.expected_output2[:i - n], color='#B5FFC8', marker='x', linestyle='')  # plot the line
+            axs[0, 1].plot(df.input1[i - n:i], df.model_output2[i - n:i], color='#9C1F26', marker='o', linestyle='-')  # plot the line
+            axs[0, 1].plot(df.input1[i - n:i], df.expected_output2[i - n:i], color='#2F9C4A', marker='x', linestyle='-')  # plot the line
+
+            axs[1, 1].plot(df.input1[:i - n], df.error_output2[:i - n], color='#EBA2A6', label='abs. error 1.', marker='x', linestyle='')
+            axs[1, 1].plot(df.input1[i - n:i], df.error_output2[i - n:i], color='#9C1F26', label='abs. error 1.', marker='x', linestyle='-')
+
+    anim = animation.FuncAnimation(fig, animate, frames=len(df.input1) + 1, interval=0.1, blit=False)
+    # axs[0,0].legend()
+    # axs[1,0].legend()
+    # axs[0, 1].legend()
+    # axs[1, 1].legend()
     plt.tight_layout()
     plt.show()
 else:
+    print(df.columns)
+
     fig, axs = plt.subplots(1, 2, figsize=(15, 9))
 
-    axs[0].plot(dataset['input1'], df.output1, label='output1 (model).', marker='o', linestyle='-')
+    axs[0].plot(df.input1, df.output1, label='output1 (model).', marker='x', linestyle='')
     axs[0].legend()
 
     if True:
-        axs[1].plot(dataset['input2'], df.output2, label='output2 (model).',marker='o',linestyle='-')
+        axs[1].plot(df.input1, df.output2, label='output2 (model).',marker='x', linestyle='')
         axs[1].legend()
 
     plt.tight_layout()
