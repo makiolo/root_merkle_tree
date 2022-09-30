@@ -149,6 +149,53 @@ def calculate_outputs(data):
     return ['output1', 'output2']
 
 
+def prepare_inputs(df):
+    df['log_ret_-24_0'] = (calculate_returns(df.input1, 24))
+    df['log_ret_-48_0'] = (calculate_returns(df.input1, 48))
+    df['log_ret_-72_0'] = (calculate_returns(df.input1, 72))
+    df['log_ret_+24_0'] = (calculate_returns(df.input1, -24))
+    df['log_ret_+48_0'] = (calculate_returns(df.input1, -48))
+    df['log_ret_+72_0'] = (calculate_returns(df.input1, -72))
+
+    df['log_ret_-24_1'] = (calculate_returns(df.input2, 24))
+    df['log_ret_-48_1'] = (calculate_returns(df.input2, 48))
+    df['log_ret_-72_1'] = (calculate_returns(df.input2, 72))
+    df['log_ret_+24_1'] = (calculate_returns(df.input2, -24))
+    df['log_ret_+48_1'] = (calculate_returns(df.input2, -48))
+    df['log_ret_+72_1'] = (calculate_returns(df.input2, -72))
+
+    df['max_-24_0'] = (calculate_max(df.input1, 24))
+    df['max_-48_0'] = (calculate_max(df.input1, 48))
+    df['max_-72_0'] = (calculate_max(df.input1, 72))
+    df['max_+24_0'] = (calculate_max(df.input1, -24))
+    df['max_+48_0'] = (calculate_max(df.input1, -48))
+    df['max_+72_0'] = (calculate_max(df.input1, -72))
+
+    df['max_-24_1'] = (calculate_max(df.input2, 24))
+    df['max_-48_1'] = (calculate_max(df.input2, 48))
+    df['max_-72_1'] = (calculate_max(df.input2, 72))
+    df['max_+24_1'] = (calculate_max(df.input2, -24))
+    df['max_+48_1'] = (calculate_max(df.input2, -48))
+    df['max_+72_1'] = (calculate_max(df.input2, -72))
+
+    df['min_-24_0'] = (calculate_min(df.input1, 24))
+    df['min_-48_0'] = (calculate_min(df.input1, 48))
+    df['min_-72_0'] = (calculate_min(df.input1, 72))
+    df['min_+24_0'] = (calculate_min(df.input1, -24))
+    df['min_+48_0'] = (calculate_min(df.input1, -48))
+    df['min_+72_0'] = (calculate_min(df.input1, -72))
+
+    df['min_-24_1'] = (calculate_min(df.input2, 24))
+    df['min_-48_1'] = (calculate_min(df.input2, 48))
+    df['min_-72_1'] = (calculate_min(df.input2, 72))
+    df['min_+24_1'] = (calculate_min(df.input2, -24))
+    df['min_+48_1'] = (calculate_min(df.input2, -48))
+    df['min_+72_1'] = (calculate_min(df.input2, -72))
+
+    df.dropna(inplace=True)
+    return df
+
+
 def make_gaussian(serie):
     return PowerTransformer(standardize=True).fit_transform(np.array(serie).reshape(-1, 1))
 
@@ -204,53 +251,7 @@ dataset = {
     'input2': paths.T[1],
 }
 df = pd.DataFrame(dataset)
-###
-df['log_ret_-24_0'] = (calculate_returns(df.input1, 24))
-df['log_ret_-48_0'] = (calculate_returns(df.input1, 48))
-df['log_ret_-72_0'] = (calculate_returns(df.input1, 72))
-df['log_ret_+24_0'] = (calculate_returns(df.input1, -24))
-df['log_ret_+48_0'] = (calculate_returns(df.input1, -48))
-df['log_ret_+72_0'] = (calculate_returns(df.input1, -72))
-
-df['log_ret_-24_1'] = (calculate_returns(df.input2, 24))
-df['log_ret_-48_1'] = (calculate_returns(df.input2, 48))
-df['log_ret_-72_1'] = (calculate_returns(df.input2, 72))
-df['log_ret_+24_1'] = (calculate_returns(df.input2, -24))
-df['log_ret_+48_1'] = (calculate_returns(df.input2, -48))
-df['log_ret_+72_1'] = (calculate_returns(df.input2, -72))
-
-df['max_-24_0'] = (calculate_max(df.input1, 24))
-df['max_-48_0'] = (calculate_max(df.input1, 48))
-df['max_-72_0'] = (calculate_max(df.input1, 72))
-df['max_+24_0'] = (calculate_max(df.input1, -24))
-df['max_+48_0'] = (calculate_max(df.input1, -48))
-df['max_+72_0'] = (calculate_max(df.input1, -72))
-
-df['max_-24_1'] = (calculate_max(df.input2, 24))
-df['max_-48_1'] = (calculate_max(df.input2, 48))
-df['max_-72_1'] = (calculate_max(df.input2, 72))
-df['max_+24_1'] = (calculate_max(df.input2, -24))
-df['max_+48_1'] = (calculate_max(df.input2, -48))
-df['max_+72_1'] = (calculate_max(df.input2, -72))
-
-df['min_-24_0'] = (calculate_min(df.input1, 24))
-df['min_-48_0'] = (calculate_min(df.input1, 48))
-df['min_-72_0'] = (calculate_min(df.input1, 72))
-df['min_+24_0'] = (calculate_min(df.input1, -24))
-df['min_+48_0'] = (calculate_min(df.input1, -48))
-df['min_+72_0'] = (calculate_min(df.input1, -72))
-
-df['min_-24_1'] = (calculate_min(df.input2, 24))
-df['min_-48_1'] = (calculate_min(df.input2, 48))
-df['min_-72_1'] = (calculate_min(df.input2, 72))
-df['min_+24_1'] = (calculate_min(df.input2, -24))
-df['min_+48_1'] = (calculate_min(df.input2, -48))
-df['min_+72_1'] = (calculate_min(df.input2, -72))
-
-df.dropna(inplace=True)
-###
-print(df)
-
+df = prepare_inputs(df)
 df = calculate_outputs(df)
 print(df)
 
@@ -265,53 +266,7 @@ dataset = {
     'input2': paths.T[3],
 }
 df = pd.DataFrame(dataset)
-# transform inputs
-#
-df['log_ret_-24_0'] = (calculate_returns(df.input1, 24))
-df['log_ret_-48_0'] = (calculate_returns(df.input1, 48))
-df['log_ret_-72_0'] = (calculate_returns(df.input1, 72))
-df['log_ret_+24_0'] = (calculate_returns(df.input1, -24))
-df['log_ret_+48_0'] = (calculate_returns(df.input1, -48))
-df['log_ret_+72_0'] = (calculate_returns(df.input1, -72))
-
-df['log_ret_-24_1'] = (calculate_returns(df.input2, 24))
-df['log_ret_-48_1'] = (calculate_returns(df.input2, 48))
-df['log_ret_-72_1'] = (calculate_returns(df.input2, 72))
-df['log_ret_+24_1'] = (calculate_returns(df.input2, -24))
-df['log_ret_+48_1'] = (calculate_returns(df.input2, -48))
-df['log_ret_+72_1'] = (calculate_returns(df.input2, -72))
-
-df['max_-24_0'] = (calculate_max(df.input1, 24))
-df['max_-48_0'] = (calculate_max(df.input1, 48))
-df['max_-72_0'] = (calculate_max(df.input1, 72))
-df['max_+24_0'] = (calculate_max(df.input1, -24))
-df['max_+48_0'] = (calculate_max(df.input1, -48))
-df['max_+72_0'] = (calculate_max(df.input1, -72))
-
-df['max_-24_1'] = (calculate_max(df.input2, 24))
-df['max_-48_1'] = (calculate_max(df.input2, 48))
-df['max_-72_1'] = (calculate_max(df.input2, 72))
-df['max_+24_1'] = (calculate_max(df.input2, -24))
-df['max_+48_1'] = (calculate_max(df.input2, -48))
-df['max_+72_1'] = (calculate_max(df.input2, -72))
-
-df['min_-24_0'] = (calculate_min(df.input1, 24))
-df['min_-48_0'] = (calculate_min(df.input1, 48))
-df['min_-72_0'] = (calculate_min(df.input1, 72))
-df['min_+24_0'] = (calculate_min(df.input1, -24))
-df['min_+48_0'] = (calculate_min(df.input1, -48))
-df['min_+72_0'] = (calculate_min(df.input1, -72))
-
-df['min_-24_1'] = (calculate_min(df.input2, 24))
-df['min_-48_1'] = (calculate_min(df.input2, 48))
-df['min_-72_1'] = (calculate_min(df.input2, 72))
-df['min_+24_1'] = (calculate_min(df.input2, -24))
-df['min_+48_1'] = (calculate_min(df.input2, -48))
-df['min_+72_1'] = (calculate_min(df.input2, -72))
-
-df.dropna(inplace=True)
-###
-
+df = prepare_inputs(df)
 df = calculate_outputs(df)
 
 
