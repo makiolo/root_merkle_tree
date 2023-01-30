@@ -6,7 +6,7 @@ from io import BytesIO
 ext = 'coded'
 
 if __name__ == '__main__':
-    for filename in glob.glob('*.7z.0*'):
+    for filename in glob.glob('*.7z*'):
         if filename.find(ext) != -1:
             # skip
             continue
