@@ -1,4 +1,4 @@
-# TODO: know order in queue (burger kling style
+# TODO: know order in queue (burger king style)
 
 import multiprocessing
 import threading
