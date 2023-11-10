@@ -9,7 +9,7 @@ import sympy.core
 from scipy.interpolate import CubicSpline
 
 
-ticker = 'NZDUSD=X'
+ticker = 'AAPL'
 model = 'gbm'  # gbm # jump
 paths = 200
 multiplier = 1
@@ -23,7 +23,7 @@ dt = 1.0 / steps
 total_steps = int((T - t0) * steps)
 
 
-close = yf.download(ticker, '2019-01-01', '2023-12-31', progress=False)['Close']
+close = yf.download(ticker, '2010-01-01', '2023-12-31', progress=False)['Close']
 # returns = np.log(close / close.shift(1))
 returns = np.diff(np.log(close))
 
@@ -56,41 +56,46 @@ cdf_numpy = lambda xxx: cdf(xxx, mu, sigma)
 # cdf_sympy = sp.lambdify((xx, mu, sigma), cdf_numpy, 'sympy')
 # cdf_numpy = cdf_integrated
 
-x = np.linspace(-1.5, +1.5, 100000)
+x = np.linspace(-6, +6, 10000)
 f = pdf_numpy(x)
 F = cdf_numpy(x)
 
 # Inverse por formula
-# cdf_inverse3 = norm.ppf(F, 0, 1)
+# cdf_inv = norm.ppf(F, 0, 1)
 
 # Inversa por analisis
 # eq = sp.Eq(cdf_sympy(yy), xx)
 # soluciones = sp.solve(eq, yy)
 # print(soluciones)
-# cdf_inverse3 = sp.lambdify(xx, soluciones[1], 'numpy')(x)
+# cdf_inv = sp.lambdify(xx, soluciones[1], 'numpy')(x)
 
 # Inversa numerica
 # ver: https://www.youtube.com/watch?v=U00Kseb6SB4
-cdf_inverse3 = x[np.searchsorted(F[:-1], x)]
+cdf_inv = x[np.searchsorted(F[:-1], x)]
 
 # F1 = cdf_inverse2(x)
 # print(F1)
-# F2 = cdf_inverse3(x)
+# F2 = cdf_inv(x)
 # print(F2)
 
 plt.figure(figsize=(8, 3))
 plt.plot(x, f, label=r'$f(x)$')
 plt.plot(x, F, label=r'$F(x)$')
 # plt.plot(x, F1, label=r'$F^-1(x)$')
-plt.plot(x, cdf_inverse3, label=r'$F^-1(y)$')
+plt.plot(x, cdf_inv, label=r'$F^-1(y)$')
 plt.legend()
 plt.show()
 
-Z = np.random.rand(100000)
-cdf_inverse_Z2 = CubicSpline(x, cdf_inverse3)(Z)
+Z = np.random.rand(1000000)
 plt.figure(figsize=(8, 3))
+
 plt.plot(x, f, label=r'$f(x)$')
-plt.hist(cdf_inverse_Z2, histtype='step', color='green', density='norm', bins=100, label=r'$F^-1(z)$')
+cdf_inverse_Z2 = CubicSpline(x, cdf_inv)(Z)
+plt.hist(cdf_inverse_Z2, histtype='bar', color='green', density='norm', bins=1000, label=r'$F^-1(z)$')
+
+cdf_inverse_Z2 = CubicSpline(x, cdf_inv)(returns)
+plt.hist(cdf_inverse_Z2, histtype='bar', color='blue', density='norm', bins=1000, label=r'$returns$')
+
 plt.legend()
 plt.show()
 
@@ -105,14 +110,14 @@ prices[:, 0] = S0
 for i in range(1, int(total_steps)):
     if model == 'gbm':
         Z = np.random.rand(paths)
-        Z = (CubicSpline(x, cdf_inverse3)(Z) - mu) / sigma
+        Z = (CubicSpline(x, cdf_inv)(Z) - mu) / sigma
         # Z = np.random.normal(0, 1, paths)
         # GBM
         prices[:, i] = prices[:, i - 1] * np.exp((mu - sigma ** 2.0 / 2.0) * dt + sigma * np.sqrt(dt) * Z)
     elif model == 'jump':
         # Jump diffusion
         Z = np.random.rand(paths)
-        Z = (CubicSpline(x, cdf_inverse3)(Z) - mu) / sigma
+        Z = (CubicSpline(x, cdf_inv)(Z) - mu) / sigma
         # Z = np.random.normal(0, 1, paths)
         # random numbers for the jump
         J = np.random.normal(mu_j, sigma_j, paths)
@@ -124,10 +129,10 @@ for i in range(1, int(total_steps)):
 plot(prices.T)
 show()
 
-returns = np.diff(np.log(prices))
-sigma = (returns.std() / np.sqrt(multiplier)) * (1.0 / np.sqrt(dt))
-mu = ((np.mean(returns) / multiplier) * (1.0 / dt)) - ((sigma ** 2) / 2)
+returns2 = np.diff(np.log(prices))
+sigma2 = (returns2.std() / np.sqrt(multiplier)) * (1.0 / np.sqrt(dt))
+mu2 = ((np.mean(returns2) / multiplier) * (1.0 / dt)) - ((sigma2 ** 2) / 2)
 print('-- simulado --')
-print(mu)
-print(sigma)
+print(mu2)
+print(sigma2)
 
