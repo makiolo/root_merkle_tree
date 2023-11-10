@@ -9,14 +9,15 @@ import sympy.core
 from scipy.interpolate import CubicSpline
 
 
-ticker = 'AAPL'
+ticker = 'MSFT'
 model = 'gbm'  # gbm # jump
 paths = 200
 multiplier = 1
-steps = 255 * multiplier
+business_days = 255
+steps = business_days * multiplier
 t0 = 0.0
-T = 10.0
-lambda_ = 20.0 / 365.0  # rate ocurrence of a jump
+T = 0.25
+lambda_ = 20.0 / business_days  # rate ocurrence of a jump
 mu_j = 0.89
 sigma_j = 0.77
 dt = 1.0 / steps
@@ -30,6 +31,8 @@ returns = np.diff(np.log(close))
 S0 = close[0]
 sigma = (returns.std() / np.sqrt(multiplier)) * (1.0 / np.sqrt(dt))
 mu = ((np.mean(returns) / multiplier) * (1.0 / dt))
+# sigma = (returns.std() * np.sqrt(multiplier))
+# mu = (np.mean(returns) * multiplier)
 
 print('-- real --')
 print(mu)
@@ -41,11 +44,11 @@ def pdf(x, mu, sigma):
     # analizas un stock y encajas su mejor "pdf"
     # return lamb * sp.exp(-lamb * x)
     # return (1.0 / (sigma * sp.sqrt(2 * sp.pi))) * sp.exp(-0.5 * ((x - mu) / sigma) ** 2)
-    return norm.pdf(x, mu, sigma)
+    return norm.pdf(x, loc=mu, scale=sigma)
 
 
 def cdf(x, mu, sigma):
-    return norm.cdf(x, mu, sigma)
+    return norm.cdf(x, loc=mu, scale=sigma)
 
 
 xx, yy = sp.symbols('x y')
@@ -81,20 +84,19 @@ cdf_inv = x[np.searchsorted(F[:-1], x)]
 plt.figure(figsize=(8, 3))
 plt.plot(x, f, label=r'$f(x)$')
 plt.plot(x, F, label=r'$F(x)$')
-# plt.plot(x, F1, label=r'$F^-1(x)$')
 plt.plot(x, cdf_inv, label=r'$F^-1(y)$')
 plt.legend()
 plt.show()
 
-Z = np.random.rand(1000000)
 plt.figure(figsize=(8, 3))
 
-plt.plot(x, f, label=r'$f(x)$')
-cdf_inverse_Z2 = CubicSpline(x, cdf_inv)(Z)
-plt.hist(cdf_inverse_Z2, histtype='bar', color='green', density='norm', bins=1000, label=r'$F^-1(z)$')
+plt.plot(x, pdf_numpy(x), label=r'$f(x)$')
 
-cdf_inverse_Z2 = CubicSpline(x, cdf_inv)(returns)
-plt.hist(cdf_inverse_Z2, histtype='bar', color='blue', density='norm', bins=1000, label=r'$returns$')
+Z = np.random.rand(1000000)
+cdf_inverse_Z2 = CubicSpline(x, cdf_inv)(Z)
+plt.hist(cdf_inverse_Z2, histtype='step', color='green', density='norm', bins=100, label=r'$F^-1(z)$')
+
+plt.hist(returns, histtype='step', color='blue', density=True, bins=100, label=r'$returns$')
 
 plt.legend()
 plt.show()
