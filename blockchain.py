@@ -598,8 +598,7 @@ class FoundationWallet ( PrivateWallet ):
         super ( ).__init__ ( self.unit, private, suffix = "_FOUNDATION" )
 
 
-dataset_csv = r"C:\Users\x335336\OneDrive - Santander Office 365\Documents\crypto_transactions_record_20211213_195307.csv"
-# dataset_csv = os.path.join ( os.path.dirname ( os.path.abspath ( __file__ ) ), "crypto_transactions_record_20211213_195307.csv" )
+dataset_csv = os.path.join ( os.path.dirname ( os.path.abspath ( __file__ ) ), "crypto_transactions_record_20211213_195307.csv" )
 df = pd.read_csv ( dataset_csv )
 
 seed = 1234
